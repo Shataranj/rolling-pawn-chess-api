@@ -1,1 +1,1 @@
-api: python rolling_pawn/app.py
+web: python rolling_pawn/app.py
