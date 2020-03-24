@@ -1,4 +1,5 @@
 import os
+import platform
 from flask import Flask, request, Response
 from database.db import initialize_db
 from database.model import GameBoardMapping, ChessGame
@@ -15,7 +16,10 @@ app.config['MONGODB_SETTINGS'] = {
 
 initialize_db(app)
 
-engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/mac/stockfish-11")
+platform_name = platform.platform()
+platform_folder = 'linux' if platform_name.startswith('linux') else 'mac'
+
+engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
 
 @app.route('/create_game', methods=['POST'])
 def add_user():
