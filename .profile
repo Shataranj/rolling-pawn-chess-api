@@ -1,0 +1,1 @@
+chmod -R 777 rolling_pawn/stockfish/linux/

@@ -1,0 +1,6 @@
+flask
+flask-mongoengine
+python-dotenv
+python-chess
+dnspython
+gunicorn
