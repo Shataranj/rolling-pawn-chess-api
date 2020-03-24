@@ -17,7 +17,7 @@ app.config['MONGODB_SETTINGS'] = {
 initialize_db(app)
 
 platform_name = platform.platform()
-platform_folder = 'linux' if platform_name.startswith('linux') else 'mac'
+platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
 
