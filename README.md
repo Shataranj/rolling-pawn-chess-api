@@ -1,0 +1,76 @@
+# A RESTFUL API TO PLAY CHESS WITH **Stockfish** ENGINE
+
+
+Rolling pawn api is a REST api built with Python and MongoDB, which uses **Stockfish - 11** engine. Currently it supports two endpoints which will be described below, but with all the capabilities Stockfish supports it can be used for features like:
+
+* Opening Trainer
+* Chess Game Analysis
+* Annotating Games
+* *and many more..*
+
+## API DOCUMENTATION
+
+### START A GAME
+
+You can start game with the engine using the below endpoint. The payload also contains a boolean ```with_engine```, because in future we also have a plan to extend to toggle between **human and engine**.
+
+**Endpoint:** ``` https://localhost:5000/create_game  ```
+
+**Method:** ``` POST ```
+
+**Header:** ``` Content-Type: application/json ```
+
+**Payload:** 
+
+```
+{
+    "board_id": "rolling-chess-board-21", 
+    "with_engine": true, 
+    "color": "white", 
+    "engine_level": 1
+}
+
+```
+
+**Schema Explanation:**
+
+```
+{
+    "board_id": Unique ID of the client making call
+    "with_engine": true/false, 
+    "color": "white"/"black - To choose a side 
+    "engine_level": Engine level (from 1 to 15)
+}
+```
+
+**Response:**
+
+```
+{
+    "board_id": "rolling-chess-board-21",
+    "engine_level": 1,
+    "game_id": "65e9f862-6e0f-11ea-ae3f-fad5b90f71a6",
+    "game_with": "Game started with Stockfish Engine",
+    "initial_move": {},
+    "player_side": "white",
+    "status": "In Progress"
+}
+
+```
+The ``` initial_move ``` will have some value if player chooses "black". For example, for a payload like:
+
+```
+{
+    "board_id": "rolling-chess-board-21", 
+    "with_engine": true, 
+    "color": "black", 
+    "engine_level": 1
+}
+
+```
+
+The response will be:
+
+```
+
+```

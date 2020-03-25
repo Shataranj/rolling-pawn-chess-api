@@ -22,7 +22,7 @@ platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
 
 @app.route('/create_game', methods=['POST'])
-def add_user():
+def add_board():
     board = chess.Board()
 
     body = request.get_json()
@@ -44,6 +44,14 @@ def add_user():
     status = game_board.gameStatus
     game_started_with = "Game started with Stockfish Engine" if with_engine else "Game started with other player"
     current_turn = "white" if board.turn else "black"
+    if player_side == "black":
+        result = engine.play(board, chess.engine.Limit(depth=engine_level))
+        board.push_uci(str(result.move))
+        initial_move["engine_move"] ={
+                            "from": str(result.move)[:2], 
+                            "to": str(result.move)[2:4]
+                        }
+
     ChessGame(gameId=game_id, currentFen=str(board.fen()), engineLevel=engine_level, currentTurn=current_turn).save()
 
     return {
