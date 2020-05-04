@@ -4,3 +4,5 @@ python-dotenv
 python-chess
 dnspython
 gunicorn
+flask-socketio
+flask-cors

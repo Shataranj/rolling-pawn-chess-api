@@ -1,2 +1,3 @@
-rolling_env/*
+rolling_pawn_env/*
 .vscode/*
+*.DS_Store

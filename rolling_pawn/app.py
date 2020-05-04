@@ -7,6 +7,8 @@ import json
 import uuid
 import chess.engine
 import chess
+from flask_socketio import SocketIO, emit, send
+from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
 
@@ -14,12 +16,15 @@ app.config['MONGODB_SETTINGS'] = {
     'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
 }
 
+socketio = SocketIO(app, cors_allowed_origins="http://0.0.0.0:3000")
+
 initialize_db(app)
 
 platform_name = platform.platform()
 platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
+
 
 @app.route('/create_game', methods=['POST'])
 def add_board():
@@ -93,8 +98,8 @@ def play_with_ai():
     current_turn = "white" if board.turn else "black"
     ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
     ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
-    
-    return {
+
+    response = {
                 "engine_move": 
                     {
                         "from": str(result.move)[:2], 
@@ -102,7 +107,21 @@ def play_with_ai():
                     },
                 "fen": board.fen(), 
                 "game_over": game_over
-            }, 201
+            }
+    return response, 201
+
+
+@app.route('/move', methods=['POST'])
+def test_socket():
+    body = request.get_json()
+    from_sq = body.get("from")
+    to_sq = body.get("to")
+    response = {
+        "from": from_sq, 
+        "to": to_sq
+    }
+    socketio.emit("move", response, broadcast=True)
+    return response, 201
 
 port = int(os.environ.get("PORT", 5000))
-app.run(host='0.0.0.0', port=port)
+socketio.run(app, host='0.0.0.0', port=port)
