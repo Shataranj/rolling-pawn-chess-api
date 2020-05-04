@@ -16,7 +16,7 @@ app.config['MONGODB_SETTINGS'] = {
     'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
 }
 
-UI_ENDPOINT = os.environ['UI_ENDPOINT']
+UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://0.0.0.0:3000'
 
 socketio = SocketIO(app, cors_allowed_origins=UI_ENDPOINT)
 
