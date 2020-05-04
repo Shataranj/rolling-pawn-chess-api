@@ -16,7 +16,9 @@ app.config['MONGODB_SETTINGS'] = {
     'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
 }
 
-socketio = SocketIO(app, cors_allowed_origins="http://0.0.0.0:3000")
+UI_ENDPOINT = os.environ['UI_ENDPOINT']
+
+socketio = SocketIO(app, cors_allowed_origins=UI_ENDPOINT)
 
 initialize_db(app)
 
