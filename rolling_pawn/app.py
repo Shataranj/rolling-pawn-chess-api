@@ -18,7 +18,7 @@ app.config['MONGODB_SETTINGS'] = {
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://0.0.0.0:3000'
 
-socketio = SocketIO(app, cors_allowed_origins="https://rolling-pawn.herokuapp.com")
+socketio = SocketIO(app, cors_allowed_origins=UI_ENDPOINT)
 
 initialize_db(app)
 
