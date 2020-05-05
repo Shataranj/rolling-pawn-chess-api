@@ -116,11 +116,14 @@ def play_with_ai():
 @app.route('/move', methods=['POST'])
 def test_socket():
     body = request.get_json()
+    game_id = body.get("game_id")
     from_sq = body.get("from")
     to_sq = body.get("to")
+    
     response = {
         "from": from_sq, 
-        "to": to_sq
+        "to": to_sq,
+        "game_id": game_id
     }
     socketio.emit("move", response, broadcast=True)
     return response, 201
