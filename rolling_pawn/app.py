@@ -10,7 +10,10 @@ import chess
 from flask_socketio import SocketIO, emit, send
 from flask_cors import CORS, cross_origin
 
+
+
 app = Flask(__name__)
+cors = CORS(app)
 
 app.config['MONGODB_SETTINGS'] = {
     'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
@@ -114,7 +117,7 @@ def play_with_ai():
 
 
 @app.route('/move', methods=['POST'])
-def test_socket():
+def move_to_ui():
     body = request.get_json()
     game_id = body.get("game_id")
     from_sq = body.get("from")
@@ -127,6 +130,28 @@ def test_socket():
     }
     socketio.emit("move", response, broadcast=True)
     return response, 201
+
+@app.route('/get_all_games', methods=['GET'])
+@cross_origin()
+def get_games():
+    status = request.args.get('status')
+    print (status)
+    game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
+    result = []
+    # response = {}
+    for game in game_board:
+        result.append({
+            "game_id": game.gameId,
+            "board_id": game.boardId,
+            "with_engine": game.withEngine,
+            "game_status": game.gameStatus})
+
+    # response = {
+    #     "total": len(result),
+    #     "games": result
+    # }
+    return json.dumps(result), 200
+
 
 port = int(os.environ.get("PORT", 5000))
 socketio.run(app, host='0.0.0.0', port=port)
