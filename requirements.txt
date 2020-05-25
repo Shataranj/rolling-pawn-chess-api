@@ -7,3 +7,5 @@ gunicorn
 flask-socketio
 flask-cors
 flask-bcrypt
+pyjwt
+schema
