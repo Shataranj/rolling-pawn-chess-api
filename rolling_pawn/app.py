@@ -1,6 +1,7 @@
 import os
 import platform
-from flask import Flask, request, Response
+from datetime import datetime
+from flask import Flask, request
 from database.db import initialize_db
 from database.model import GameBoardMapping, ChessGame, UserProfile
 from validation_schema import userRegistrationSchema
@@ -20,7 +21,7 @@ bcrypt = Bcrypt(app)
 SECRET_KEY = "secret key"
 
 app.config['MONGODB_SETTINGS'] = {
-    'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
+    'host': 'mongodb://127.0.0.1:27017/rolling_pawn_api'
 }
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://0.0.0.0:3000'
@@ -62,9 +63,10 @@ def login():
     profiles = UserProfile.objects(userEmail=email)
     if profiles and bcrypt.check_password_hash(profiles[0].userPassword, password):
         profile = profiles[0]
-        token = jwt.encode({'userEmail': profile.userEmail, 'boardId': profile.boardId}, SECRET_KEY,
-                           algorithm='HS256').decode('utf-8')
-        return json.dumps({'token': token}), 200
+        token = jwt.encode(
+            {'userEmail': profile.userEmail, 'boardId': profile.boardId, 'iat': datetime.utcnow()},
+            SECRET_KEY, algorithm='HS256').decode('utf-8')
+        return {'token': str(token)}, 200
     return {'message': 'Invalid email or password'}, 401
 
 
