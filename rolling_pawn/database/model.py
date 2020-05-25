@@ -15,3 +15,9 @@ class ChessGame(db.Document):
     withEngine = db.BooleanField()
     engineLevel = db.IntField(default=4)
     currentTurn = db.StringField(required=True, choices=('white', 'black'))
+
+class UserProfile(db.Document):
+    boardId = db.StringField(required=True, max_length=80)
+    userId = db.StringField(required=True, max_length=20, primary_key=True)
+    userEmail = db.EmailField(max_length=80, required=True)
+    userPassword = db.StringField(max_length=80, required=True)

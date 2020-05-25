@@ -2,11 +2,13 @@ import os
 import platform
 from flask import Flask, request, Response
 from database.db import initialize_db
-from database.model import GameBoardMapping, ChessGame
+from database.model import GameBoardMapping, ChessGame, UserProfile
 import json
 import uuid
 import chess.engine
+from flask_bcrypt import Bcrypt
 import chess
+import chess.pgn
 from flask_socketio import SocketIO, emit, send
 from flask_cors import CORS, cross_origin
 
@@ -14,6 +16,7 @@ from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
 cors = CORS(app)
+bcrypt = Bcrypt(app)
 
 app.config['MONGODB_SETTINGS'] = {
     'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
@@ -80,7 +83,7 @@ def play_with_ai():
     game_id = body.get('game_id')
     user_move = "{0}{1}".format(body.get("from"), body.get("to"))
     game_over = False
-
+    
     game_obj = ChessGame.objects(gameId=game_id).first()
     engine_level = game_obj.engineLevel
     current_fen = game_obj.currentFen
@@ -99,6 +102,8 @@ def play_with_ai():
         game_over = True
         ChessGame.objects(gameId=game_id).update(set__result=board.result())
         GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="Completed")
+
+    
 
     current_turn = "white" if board.turn else "black"
     ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
@@ -151,6 +156,23 @@ def get_games():
     #     "games": result
     # }
     return json.dumps(result), 200
+
+
+@app.route('/register', methods=['POST'])
+def user_registration():
+    body = request.get_json()
+    board_id = body.get('board_id')
+    user_id = body.get('user_id')
+    user_email = body.get('user_email')
+    user_password = bcrypt.generate_password_hash(password=body.get('user_password')).decode('utf-8')
+    
+    user_details =  UserProfile(userId=user_id, boardId=board_id, userEmail=user_email, userPassword=user_password).save()
+
+    return {
+                'board_id': board_id, 
+                'user_id': user_id, 
+                'user_email': user_email
+            }, 201
 
 
 port = int(os.environ.get("PORT", 5000))

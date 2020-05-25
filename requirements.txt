@@ -6,3 +6,4 @@ dnspython
 gunicorn
 flask-socketio
 flask-cors
+flask-bcrypt
