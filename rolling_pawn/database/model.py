@@ -20,5 +20,6 @@ class ChessGame(db.Document):
 class UserProfile(db.Document):
     boardId = db.StringField(required=True, max_length=80)
     userId = db.StringField(required=True, max_length=20, primary_key=True)
-    userEmail = db.EmailField(max_length=80, required=True)
+    userEmail = db.EmailField(max_length=80, required=True, unique=True)
     userPassword = db.StringField(max_length=80, required=True)
+    isAdmin = db.BooleanField(default=False)

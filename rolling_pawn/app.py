@@ -1,7 +1,7 @@
 import os
 import platform
 from datetime import datetime
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from database.db import initialize_db
 from database.model import GameBoardMapping, ChessGame, UserProfile
 from validation_schema import userRegistrationSchema
@@ -14,14 +14,15 @@ import chess
 import chess.pgn
 from flask_socketio import SocketIO, emit, send
 from flask_cors import CORS, cross_origin
+from functools import wraps
 
 app = Flask(__name__)
 cors = CORS(app)
 bcrypt = Bcrypt(app)
-SECRET_KEY = "secret key"
+app.config['SECRET_KEY'] = "secret key"
 
 app.config['MONGODB_SETTINGS'] = {
-    'host': 'mongodb://127.0.0.1:27017/rolling_pawn_api'
+    'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
 }
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://0.0.0.0:3000'
@@ -36,6 +37,24 @@ platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
 
 
+def toke_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = ""
+        if 'x-access-token' in request.headers:
+            token = request.headers.get('x-access-token')
+        if not token:
+            return jsonify({'message': 'auth token is missing'}), 403
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'])
+            current_user = UserProfile.objects(userId=data.get('user_id')).first()
+        except:
+            return jsonify({'message': 'Token is invalid'}), 403
+
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+
 @app.route('/register', methods=['POST'])
 def register():
     body = request.get_json()
@@ -45,12 +64,17 @@ def register():
         user_id = body.get('user_id')
         user_email = body.get('user_email')
         user_password = bcrypt.generate_password_hash(password=body.get('user_password')).decode('utf-8')
-        UserProfile(userId=user_id, boardId=board_id, userEmail=user_email, userPassword=user_password).save()
-        return {
-                   'board_id': board_id,
-                   'user_id': user_id,
-                   'user_email': user_email
-               }, 201
+        user_available = UserProfile.objects(userId=user_id)
+        if len(user_available) == 0:
+            UserProfile(userId=user_id, boardId=board_id, userEmail=user_email, userPassword=user_password).save()
+            new_profile = UserProfile.objects(userId=user_id)
+            return {
+                    'board_id': new_profile.boardId,
+                    'user_id': new_profile.userId,
+                    'user_email': new_profile.userEmail
+                }, 201
+        else:
+            return jsonify({'message': 'User ID is not avaibale'}), 400
     except Exception as e:
         return {'error': str(e)}, 400
 
@@ -64,10 +88,33 @@ def login():
     if profiles and bcrypt.check_password_hash(profiles[0].userPassword, password):
         profile = profiles[0]
         token = jwt.encode(
-            {'userEmail': profile.userEmail, 'boardId': profile.boardId, 'iat': datetime.utcnow()},
-            SECRET_KEY, algorithm='HS256').decode('utf-8')
+            {'user_id': profile.userId, 'user_email': profile.userEmail, 'board_id': profile.boardId, 'iat': datetime.utcnow()},
+            app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
         return {'token': str(token)}, 200
     return {'message': 'Invalid email or password'}, 401
+
+@app.route('/user/<string:user_id>', methods=['GET'])
+@cross_origin()
+@toke_required
+def get_user(current_user, user_id):
+    user_details = UserProfile.objects(userId=user_id).first()
+    user_game_board_mapping = GameBoardMapping.objects(boardId=user_details.boardId)
+    user_games = []
+
+    for game in user_game_board_mapping:
+        user_games.append({
+            "game_id": game.gameId,
+            "board_id": game.boardId,
+            "with_engine": game.withEngine,
+            "game_status": game.gameStatus})
+
+    response = {
+        "user_name": user_details.userId,
+        "user_email": user_details.userEmail,
+        "user_board_id": user_details.boardId,
+        "games": user_games
+    }
+    return jsonify(response), 200
 
 
 @app.route('/create_game', methods=['POST'])
@@ -179,7 +226,6 @@ def get_games():
     print (status)
     game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
     result = []
-    # response = {}
     for game in game_board:
         result.append({
             "game_id": game.gameId,
@@ -187,10 +233,6 @@ def get_games():
             "with_engine": game.withEngine,
             "game_status": game.gameStatus})
 
-    # response = {
-    #     "total": len(result),
-    #     "games": result
-    # }
     return json.dumps(result), 200
 
 

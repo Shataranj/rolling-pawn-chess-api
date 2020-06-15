@@ -2,3 +2,4 @@ rolling_pawn_env/*
 .vscode/*
 *.DS_Store
 rolling_pawn/database/__pycache__/*
+rolling_pawn/__pycache__
