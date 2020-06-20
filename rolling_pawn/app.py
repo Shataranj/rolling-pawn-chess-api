@@ -22,7 +22,7 @@ bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = "secret key"
 
 app.config['MONGODB_SETTINGS'] = {
-    'host': 'mongodb+srv://rolling:pawns@chess-cluster-h3zto.mongodb.net/rolling_pawn_api'
+    'host': 'mongodb://127.0.0.1:27017/rolling_pawn_api'
 }
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://0.0.0.0:3000'
@@ -52,6 +52,7 @@ def toke_required(f):
             return jsonify({'message': 'Token is invalid'}), 403
 
         return f(current_user, *args, **kwargs)
+
     return decorated
 
 
@@ -69,10 +70,10 @@ def register():
             UserProfile(userId=user_id, boardId=board_id, userEmail=user_email, userPassword=user_password).save()
             new_profile = UserProfile.objects(userId=user_id)
             return {
-                    'board_id': new_profile.boardId,
-                    'user_id': new_profile.userId,
-                    'user_email': new_profile.userEmail
-                }, 201
+                       'board_id': new_profile.boardId,
+                       'user_id': new_profile.userId,
+                       'user_email': new_profile.userEmail
+                   }, 201
         else:
             return jsonify({'message': 'User ID is not avaibale'}), 400
     except Exception as e:
@@ -88,31 +89,41 @@ def login():
     if profiles and bcrypt.check_password_hash(profiles[0].userPassword, password):
         profile = profiles[0]
         token = jwt.encode(
-            {'user_id': profile.userId, 'user_email': profile.userEmail, 'board_id': profile.boardId, 'iat': datetime.utcnow()},
+            {'user_id': profile.userId, 'user_email': profile.userEmail, 'board_id': profile.boardId,
+             'iat': datetime.utcnow()},
             app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
         return {'token': str(token)}, 200
     return {'message': 'Invalid email or password'}, 401
 
-@app.route('/user/<string:user_id>', methods=['GET'])
+
+@app.route('/my_games', methods=['GET'])
 @cross_origin()
 @toke_required
-def get_user(current_user, user_id):
-    user_details = UserProfile.objects(userId=user_id).first()
-    user_game_board_mapping = GameBoardMapping.objects(boardId=user_details.boardId)
+def get_my_games(current_user):
+    user_game_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId)
     user_games = []
 
     for game in user_game_board_mapping:
         user_games.append({
             "game_id": game.gameId,
-            "board_id": game.boardId,
             "with_engine": game.withEngine,
             "game_status": game.gameStatus})
 
     response = {
-        "user_name": user_details.userId,
-        "user_email": user_details.userEmail,
-        "user_board_id": user_details.boardId,
-        "games": user_games
+        "games": user_games,
+        "board_id": current_user.boardId
+    }
+    return jsonify(response), 200
+
+
+@app.route('/profile', methods=['GET'])
+@cross_origin()
+@toke_required
+def get_user_profile(current_user):
+    response = {
+        "user_name": current_user.userId,
+        "user_email": current_user.userEmail,
+        "user_board_id": current_user.boardId
     }
     return jsonify(response), 200
 
@@ -223,7 +234,6 @@ def move_to_ui():
 @cross_origin()
 def get_games():
     status = request.args.get('status')
-    print (status)
     game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
     result = []
     for game in game_board:
