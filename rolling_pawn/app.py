@@ -68,14 +68,14 @@ def register():
         user_available = UserProfile.objects(userId=user_id)
         if len(user_available) == 0:
             UserProfile(userId=user_id, boardId=board_id, userEmail=user_email, userPassword=user_password).save()
-            new_profile = UserProfile.objects(userId=user_id)
+            new_profile = UserProfile.objects(userId=user_id)[0]
             return {
                        'board_id': new_profile.boardId,
                        'user_id': new_profile.userId,
                        'user_email': new_profile.userEmail
                    }, 201
         else:
-            return jsonify({'message': 'User ID is not avaibale'}), 400
+            return jsonify({'message': 'User ID is not available'}), 400
     except Exception as e:
         return {'error': str(e)}, 400
 
