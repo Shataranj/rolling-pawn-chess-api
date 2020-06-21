@@ -56,6 +56,13 @@ def toke_required(f):
     return decorated
 
 
+def get_token(profile):
+    return jwt.encode(
+        {'user_id': profile.userId, 'user_email': profile.userEmail, 'board_id': profile.boardId,
+         'iat': datetime.utcnow()},
+        app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
+
+
 @app.route('/register', methods=['POST'])
 def register():
     body = request.get_json()
@@ -72,7 +79,8 @@ def register():
             return {
                        'board_id': new_profile.boardId,
                        'user_id': new_profile.userId,
-                       'user_email': new_profile.userEmail
+                       'user_email': new_profile.userEmail,
+                       'token': get_token(new_profile)
                    }, 201
         else:
             return jsonify({'message': 'User ID is not available'}), 400
@@ -87,11 +95,7 @@ def login():
     password = body.get('user_password')
     profiles = UserProfile.objects(userEmail=email)
     if profiles and bcrypt.check_password_hash(profiles[0].userPassword, password):
-        profile = profiles[0]
-        token = jwt.encode(
-            {'user_id': profile.userId, 'user_email': profile.userEmail, 'board_id': profile.boardId,
-             'iat': datetime.utcnow()},
-            app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
+        token = get_token(profiles[0])
         return {'token': str(token)}, 200
     return {'message': 'Invalid email or password'}, 401
 
