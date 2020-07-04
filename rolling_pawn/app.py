@@ -96,7 +96,7 @@ def login():
     profiles = UserProfile.objects(userEmail=email)
     if profiles and bcrypt.check_password_hash(profiles[0].userPassword, password):
         token = get_token(profiles[0])
-        return {'token': str(token)}, 200
+        return {'token': token}, 200
     return {'message': 'Invalid email or password'}, 401
 
 
@@ -224,7 +224,7 @@ def move_to_ui():
     game_id = body.get("game_id")
     from_sq = body.get("from")
     to_sq = body.get("to")
-
+    ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
     response = {
         "from": from_sq,
         "to": to_sq,

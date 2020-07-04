@@ -11,6 +11,7 @@ class GameBoardMapping(db.Document):
 class ChessGame(db.Document):
     gameId = db.StringField(required=True, primary_key=True)
     currentFen = db.StringField(required=True)
+    moves = db.ListField(default=[])
     result = db.StringField(required=True, default="*", choices=('1-0','0-1','1/2-1/2','*'))
     withEngine = db.BooleanField()
     engineLevel = db.IntField(default=4)
