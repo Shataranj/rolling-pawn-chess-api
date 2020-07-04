@@ -252,5 +252,17 @@ def get_games():
     return json.dumps(result), 200
 
 
+@app.route('/pgn', methods=['GET'])
+@cross_origin()
+def get_pgn():
+    gameId = request.args.get('gameId')
+    game_board = ChessGame.objects(gameId=gameId)
+    if game_board:
+        board = chess.Board()
+        pgn = board.variation_san([chess.Move.from_uci(m) for m in game_board[0].moves])
+        return {'pgn': pgn}, 200
+    return {'message': 'Invalid game Id'}, 400
+
+
 port = int(os.environ.get("PORT", 5000))
 socketio.run(app, host='0.0.0.0', port=port)
