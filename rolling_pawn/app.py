@@ -25,9 +25,9 @@ app.config['MONGODB_SETTINGS'] = {
     'host': 'mongodb://127.0.0.1:27017/rolling_pawn_api'
 }
 
-UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://0.0.0.0:3000'
+UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
-socketio = SocketIO(app, cors_allowed_origins=UI_ENDPOINT)
+socketio = SocketIO(app, cors_allowed_origins=[UI_ENDPOINT])
 
 initialize_db(app)
 
@@ -141,6 +141,8 @@ def add_board():
     board_id = body.get('board_id')
     player_side = body.get('color')
     with_engine = False
+    # TODO: Set correct default value.
+    engine_level = 1
     initial_move = {}
 
     if body.get('with_engine'):
