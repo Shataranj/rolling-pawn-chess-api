@@ -1,20 +1,21 @@
+import json
 import os
 import platform
+import uuid
 from datetime import datetime
-from flask import Flask, request, jsonify
+from functools import wraps
+
+import chess
+import chess.engine
+import chess.pgn
+import jwt
 from database.db import initialize_db
 from database.model import GameBoardMapping, ChessGame, UserProfile
-from validation_schema import userRegistrationSchema
-import jwt
-import json
-import uuid
-import chess.engine
+from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
-import chess
-import chess.pgn
-from flask_socketio import SocketIO, emit, send
 from flask_cors import CORS, cross_origin
-from functools import wraps
+from flask_socketio import SocketIO
+from validation_schema import userRegistrationSchema, gamePlaySchema
 
 app = Flask(__name__)
 cors = CORS(app)
@@ -133,6 +134,8 @@ def get_user_profile(current_user):
 
 
 @app.route('/create_game', methods=['POST'])
+@cross_origin()
+@toke_required
 def add_board():
     board = chess.Board()
 
@@ -179,6 +182,8 @@ def add_board():
 
 
 @app.route('/play', methods=['POST'])
+@cross_origin()
+@toke_required
 def play_with_ai():
     body = request.get_json()
     game_id = body.get('game_id')
@@ -221,23 +226,44 @@ def play_with_ai():
 
 
 @app.route('/move', methods=['POST'])
+@cross_origin()
+@toke_required
 def move_to_ui():
     body = request.get_json()
-    game_id = body.get("game_id")
-    from_sq = body.get("from")
-    to_sq = body.get("to")
-    ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
-    response = {
-        "from": from_sq,
-        "to": to_sq,
-        "game_id": game_id
-    }
-    socketio.emit("move", response, broadcast=True)
-    return response, 201
+    try:
+        gamePlaySchema.validate(body)
+        game_id = body.get("game_id")
+        from_sq = body.get("from")
+        to_sq = body.get("to")
+        games = ChessGame.objects(gameId=game_id)
+        if not games:
+            return {'message': 'Invalid game Id'}, 400
+
+        board = chess.Board()
+        for move in games[0].moves:
+            board.push_uci(move)
+
+        response = {
+                "from": from_sq,
+                "to": to_sq,
+                "game_id": game_id,
+                "fen": board.fen()
+        }
+
+        if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
+            ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
+            return response, 201
+
+        socketio.emit("move", response, broadcast=True)
+        return {'message': 'Invalid move'}, 400
+    except Exception as e:
+        return {'error': str(e)}, 400
+
 
 
 @app.route('/get_all_games', methods=['GET'])
 @cross_origin()
+@toke_required
 def get_games():
     status = request.args.get('status')
     game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
@@ -252,11 +278,28 @@ def get_games():
     return json.dumps(result), 200
 
 
+@app.route('/game', methods=['GET'])
+@cross_origin()
+@toke_required
+def get_game():
+    game_id = request.args.get('gameId')
+    games = ChessGame.objects(gameId=game_id)
+    if games:
+        game = games[0]
+        board = chess.Board()
+        for move in game.moves:
+            board.push_uci(move)
+        return {"game_id": game.gameId,
+                "fen": board.fen()}, 200
+    return {'message': 'Invalid game Id'}, 400
+
+
 @app.route('/pgn', methods=['GET'])
 @cross_origin()
+@toke_required
 def get_pgn():
-    gameId = request.args.get('gameId')
-    game_board = ChessGame.objects(gameId=gameId)
+    game_id = request.args.get('gameId')
+    game_board = ChessGame.objects(gameId=game_id)
     if game_board:
         board = chess.Board()
         pgn = board.variation_san([chess.Move.from_uci(m) for m in game_board[0].moves])
