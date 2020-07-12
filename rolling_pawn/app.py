@@ -38,7 +38,7 @@ platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
 
 
-def toke_required(f):
+def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = ""
@@ -103,7 +103,7 @@ def login():
 
 @app.route('/my_games', methods=['GET'])
 @cross_origin()
-@toke_required
+@token_required
 def get_my_games(current_user):
     user_game_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId)
     user_games = []
@@ -123,7 +123,7 @@ def get_my_games(current_user):
 
 @app.route('/profile', methods=['GET'])
 @cross_origin()
-@toke_required
+@token_required
 def get_user_profile(current_user):
     response = {
         "user_name": current_user.userId,
@@ -135,7 +135,7 @@ def get_user_profile(current_user):
 
 @app.route('/create_game', methods=['POST'])
 @cross_origin()
-@toke_required
+@token_required
 def add_board():
     board = chess.Board()
 
@@ -183,7 +183,7 @@ def add_board():
 
 @app.route('/play', methods=['POST'])
 @cross_origin()
-@toke_required
+@token_required
 def play_with_ai():
     body = request.get_json()
     game_id = body.get('game_id')
@@ -227,7 +227,7 @@ def play_with_ai():
 
 @app.route('/move', methods=['POST'])
 @cross_origin()
-@toke_required
+@token_required
 def move_to_ui():
     body = request.get_json()
     try:
@@ -244,10 +244,10 @@ def move_to_ui():
             board.push_uci(move)
 
         response = {
-                "from": from_sq,
-                "to": to_sq,
-                "game_id": game_id,
-                "fen": board.fen()
+            "from": from_sq,
+            "to": to_sq,
+            "game_id": game_id,
+            "fen": board.fen()
         }
 
         if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
@@ -260,10 +260,9 @@ def move_to_ui():
         return {'error': str(e)}, 400
 
 
-
 @app.route('/get_all_games', methods=['GET'])
 @cross_origin()
-@toke_required
+@token_required
 def get_games():
     status = request.args.get('status')
     game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
@@ -280,7 +279,7 @@ def get_games():
 
 @app.route('/game', methods=['GET'])
 @cross_origin()
-@toke_required
+@token_required
 def get_game():
     game_id = request.args.get('gameId')
     games = ChessGame.objects(gameId=game_id)
@@ -296,7 +295,7 @@ def get_game():
 
 @app.route('/pgn', methods=['GET'])
 @cross_origin()
-@toke_required
+@token_required
 def get_pgn():
     game_id = request.args.get('gameId')
     game_board = ChessGame.objects(gameId=game_id)
@@ -305,6 +304,24 @@ def get_pgn():
         pgn = board.variation_san([chess.Move.from_uci(m) for m in game_board[0].moves])
         return {'pgn': pgn}, 200
     return {'message': 'Invalid game Id'}, 400
+
+
+@app.route('/score', methods=['GET'])
+@cross_origin()
+@token_required
+def get_score():
+    game_id = request.args.get('gameId')
+    depth = request.args.get('depth')
+    games = ChessGame.objects(gameId=game_id)
+    board = chess.Board()
+    if not games:
+        return {'message': 'Invalid game Id'}, 400
+    scores = []
+    for move in games[0].moves:
+        board.push_uci(move)
+        info = engine.analyse(board, chess.engine.Limit(depth=depth))
+        scores.append({'move': move, 'score': info.get('score').white().score()})
+    return {'scores': scores}, 200
 
 
 port = int(os.environ.get("PORT", 5000))
