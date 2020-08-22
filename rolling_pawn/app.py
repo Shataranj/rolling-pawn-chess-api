@@ -136,7 +136,7 @@ def get_user_profile(current_user):
 @app.route('/create_game', methods=['POST'])
 @cross_origin()
 @token_required
-def add_board():
+def add_board(current_user):
     board = chess.Board()
 
     body = request.get_json()
@@ -184,7 +184,7 @@ def add_board():
 @app.route('/play', methods=['POST'])
 @cross_origin()
 @token_required
-def play_with_ai():
+def play_with_ai(current_user):
     body = request.get_json()
     game_id = body.get('game_id')
     user_move = "{0}{1}".format(body.get("from"), body.get("to"))
@@ -228,7 +228,7 @@ def play_with_ai():
 @app.route('/move', methods=['POST'])
 @cross_origin()
 @token_required
-def move_to_ui():
+def move_to_ui(current_user):
     body = request.get_json()
     try:
         gamePlaySchema.validate(body)
@@ -263,7 +263,7 @@ def move_to_ui():
 @app.route('/get_all_games', methods=['GET'])
 @cross_origin()
 @token_required
-def get_games():
+def get_games(current_user):
     status = request.args.get('status')
     game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
     result = []
@@ -280,7 +280,7 @@ def get_games():
 @app.route('/game', methods=['GET'])
 @cross_origin()
 @token_required
-def get_game():
+def get_game(current_user):
     game_id = request.args.get('gameId')
     games = ChessGame.objects(gameId=game_id)
     if games:
@@ -296,7 +296,7 @@ def get_game():
 @app.route('/pgn', methods=['GET'])
 @cross_origin()
 @token_required
-def get_pgn():
+def get_pgn(current_user):
     game_id = request.args.get('gameId')
     game_board = ChessGame.objects(gameId=game_id)
     if game_board:
@@ -309,7 +309,7 @@ def get_pgn():
 @app.route('/score', methods=['GET'])
 @cross_origin()
 @token_required
-def get_score():
+def get_score(current_user):
     game_id = request.args.get('gameId')
     depth = request.args.get('depth')
     games = ChessGame.objects(gameId=game_id)
