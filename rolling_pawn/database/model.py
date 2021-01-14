@@ -1,5 +1,6 @@
 from .db import db
 from flask_mongoengine import BaseQuerySet
+import datetime
 
 class GameBoardMapping(db.Document):
     gameId = db.StringField(required=True)
@@ -16,6 +17,7 @@ class ChessGame(db.Document):
     withEngine = db.BooleanField()
     engineLevel = db.IntField(default=4)
     currentTurn = db.StringField(required=True, choices=('white', 'black'))
+    createdAt = db.DateTimeField(default=datetime.datetime.utcnow)
 
 
 class UserProfile(db.Document):

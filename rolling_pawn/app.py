@@ -105,14 +105,16 @@ def login():
 @cross_origin()
 @token_required
 def get_my_games(current_user):
-    user_game_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId)
+    user_games_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId)
     user_games = []
 
-    for game in user_game_board_mapping:
+    for game_board_mapping in user_games_board_mapping:
+        game = ChessGame.objects(gameId= game_board_mapping.gameId).first()
         user_games.append({
-            "game_id": game.gameId,
-            "with_engine": game.withEngine,
-            "game_status": game.gameStatus})
+            "game_id": game_board_mapping.gameId,
+            "with_engine": game_board_mapping.withEngine,
+            "game_status": game_board_mapping.gameStatus,
+            "created_at": game.createdAt})
 
     response = {
         "games": user_games,
