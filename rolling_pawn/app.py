@@ -114,7 +114,9 @@ def get_my_games(current_user):
             "game_id": game_board_mapping.gameId,
             "with_engine": game_board_mapping.withEngine,
             "game_status": game_board_mapping.gameStatus,
-            "created_at": game.createdAt})
+            "created_at": game.createdAt,
+            "player_1": current_user.userId,
+            "player_2": "Engine"})
 
     response = {
         "games": user_games,

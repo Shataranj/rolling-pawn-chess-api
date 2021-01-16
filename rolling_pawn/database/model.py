@@ -19,7 +19,6 @@ class ChessGame(db.Document):
     currentTurn = db.StringField(required=True, choices=('white', 'black'))
     createdAt = db.DateTimeField(default=datetime.datetime.utcnow)
 
-
 class UserProfile(db.Document):
     boardId = db.StringField(required=True, max_length=80)
     userId = db.StringField(required=True, max_length=20, primary_key=True)
