@@ -23,7 +23,7 @@ bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = "secret key"
 
 app.config['MONGODB_SETTINGS'] = {
-    'host': 'mongodb://127.0.0.1:27017/rolling_pawn_api'
+    'host': os.environ.get('MONGO_ATLAS') or 'mongodb://127.0.0.1:27017/rolling_pawn_api'
 }
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
