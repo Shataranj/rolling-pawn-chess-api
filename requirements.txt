@@ -7,7 +7,7 @@ gunicorn
 flask-socketio
 flask-cors
 flask-bcrypt
-pyjwt
+# pyjwt
 schema
-PyJWT
+PyJWT==1.4.0
 Flask-JWT
