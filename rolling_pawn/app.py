@@ -28,7 +28,7 @@ app.config['MONGODB_SETTINGS'] = {
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
-socketio = SocketIO(app, cors_allowed_origins=[UI_ENDPOINT])
+socketio = SocketIO(app, cors_allowed_origins=['*'])
 
 initialize_db(app)
 
@@ -36,6 +36,7 @@ platform_name = platform.platform()
 platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
+
 
 
 def token_required(f):
@@ -105,7 +106,8 @@ def login():
 @cross_origin()
 @token_required
 def get_my_games(current_user):
-    user_games_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId)
+    game_status = request.args.get('status')
+    user_games_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId, gameStatus=game_status)
     user_games = []
 
     for game_board_mapping in user_games_board_mapping:
@@ -144,7 +146,7 @@ def add_board(current_user):
     board = chess.Board()
 
     body = request.get_json()
-    game_id = str(uuid.uuid1())
+    game_id = str(uuid.uuid4())
     board_id = body.get('board_id')
     player_side = body.get('color')
     with_engine = False
@@ -256,9 +258,9 @@ def move_to_ui(current_user):
 
         if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
             ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
+            socketio.emit("move", response, broadcast=True)
             return response, 201
 
-        socketio.emit("move", response, broadcast=True)
         return {'message': 'Invalid move'}, 400
     except Exception as e:
         return {'error': str(e)}, 400
@@ -329,4 +331,9 @@ def get_score(current_user):
 
 
 port = int(os.environ.get("PORT", 5000))
+
+@socketio.on('connect')
+def onNewConnection():
+    print("%s connected" % (request.sid))
+
 socketio.run(app, host='0.0.0.0', port=port)
