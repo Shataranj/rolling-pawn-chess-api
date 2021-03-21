@@ -257,7 +257,7 @@ def move_to_ui(current_user):
         }
 
         if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
-            print("Came here once...")
+            board.push_uci(from_sq + to_sq)
             ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
             socketio.emit("move", str(board.fen()), broadcast=True)
             return response, 201
