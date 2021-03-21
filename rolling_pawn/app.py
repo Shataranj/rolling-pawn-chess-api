@@ -28,7 +28,7 @@ app.config['MONGODB_SETTINGS'] = {
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
-socketio = SocketIO(app, cors_allowed_origins=[UI_ENDPOINT])
+socketio = SocketIO(app, cors_allowed_origins=['*'])
 
 initialize_db(app)
 
@@ -36,6 +36,7 @@ platform_name = platform.platform()
 platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
+
 
 
 def token_required(f):
@@ -105,7 +106,8 @@ def login():
 @cross_origin()
 @token_required
 def get_my_games(current_user):
-    user_games_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId)
+    game_status = request.args.get('status')
+    user_games_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId, gameStatus=game_status)
     user_games = []
 
     for game_board_mapping in user_games_board_mapping:
@@ -144,7 +146,7 @@ def add_board(current_user):
     board = chess.Board()
 
     body = request.get_json()
-    game_id = str(uuid.uuid1())
+    game_id = str(uuid.uuid4())
     board_id = body.get('board_id')
     player_side = body.get('color')
     with_engine = False
@@ -173,7 +175,7 @@ def add_board(current_user):
         }
 
     ChessGame(gameId=game_id, currentFen=str(board.fen()), engineLevel=engine_level, currentTurn=current_turn).save()
-
+    socketio.emit("create_game", str(board.fen()), broadcast=True)
     return {
                'game_id': game_id,
                'board_id': board_id,
@@ -189,80 +191,54 @@ def add_board(current_user):
 @cross_origin()
 @token_required
 def play_with_ai(current_user):
-    body = request.get_json()
-    game_id = body.get('game_id')
-    user_move = "{0}{1}".format(body.get("from"), body.get("to"))
-    game_over = False
-
-    game_obj = ChessGame.objects(gameId=game_id).first()
-    engine_level = game_obj.engineLevel
-    current_fen = game_obj.currentFen
-    board = chess.Board(current_fen)
-    board.push_uci(user_move)
-
-    if not board.is_checkmate():
-        result = engine.play(board, chess.engine.Limit(depth=engine_level))
-        board.push_uci(str(result.move))
-    else:
-        game_over = True
-        ChessGame.objects(gameId=game_id).update(set__result=board.result())
-        GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="Completed")
-
-    if board.is_checkmate():
-        game_over = True
-        ChessGame.objects(gameId=game_id).update(set__result=board.result())
-        GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="Completed")
-
-    current_turn = "white" if board.turn else "black"
-    ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
-    ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
-
-    response = {
-        "engine_move":
-            {
-                "from": str(result.move)[:2],
-                "to": str(result.move)[2:4]
-            },
-        "fen": board.fen(),
-        "game_over": game_over
-    }
-    return response, 201
-
-
-@app.route('/move', methods=['POST'])
-@cross_origin()
-@token_required
-def move_to_ui(current_user):
-    body = request.get_json()
     try:
+        body = request.get_json()
         gamePlaySchema.validate(body)
-        game_id = body.get("game_id")
-        from_sq = body.get("from")
-        to_sq = body.get("to")
-        games = ChessGame.objects(gameId=game_id)
-        if not games:
-            return {'message': 'Invalid game Id'}, 400
+        game_id = body.get('game_id')
+        user_move = "{0}{1}".format(body.get("from"), body.get("to"))
+        game_over = False
 
-        board = chess.Board()
-        for move in games[0].moves:
-            board.push_uci(move)
+        game_obj = ChessGame.objects(gameId=game_id).first()
+        if not game_obj:
+                return {'message': 'Invalid game Id'}, 400
+        engine_level = game_obj.engineLevel
+        current_fen = game_obj.currentFen
+        board = chess.Board(current_fen)
+
+        if not chess.Move.from_uci(user_move) in board.legal_moves:
+            return {'message': 'Invalid move'}, 400
+
+        board.push_uci(user_move)
+        ChessGame.objects(gameId=game_id).update(push__moves=user_move)
+
+        if not board.is_checkmate():
+            result = engine.play(board, chess.engine.Limit(depth=engine_level))
+            board.push_uci(str(result.move))
+            ChessGame.objects(gameId=game_id).update(push__moves=str(result.move))
+        if board.is_checkmate():
+            game_over = True
+            ChessGame.objects(gameId=game_id).update(set__result=board.result())
+            GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="COMPLETED")
+            socketio.emit("game_over", "", broadcast=True)
+
+        current_turn = "white" if board.turn else "black"
+        ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
+        ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
+
+        socketio.emit("move", str(board.fen()), broadcast=True)
 
         response = {
-            "from": from_sq,
-            "to": to_sq,
-            "game_id": game_id,
-            "fen": board.fen()
+            "engine_move":
+                {
+                    "from": str(result.move)[:2],
+                    "to": str(result.move)[2:4]
+                },
+            "fen": board.fen(),
+            "game_over": game_over
         }
-
-        if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
-            ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
-            return response, 201
-
-        socketio.emit("move", response, broadcast=True)
-        return {'message': 'Invalid move'}, 400
+        return response, 201    
     except Exception as e:
-        return {'error': str(e)}, 400
-
+        return {'error': str(e)}, 500
 
 @app.route('/get_all_games', methods=['GET'])
 @cross_origin()
@@ -329,4 +305,9 @@ def get_score(current_user):
 
 
 port = int(os.environ.get("PORT", 5000))
+
+@socketio.on('connect')
+def onNewConnection():
+    print("%s connected" % (request.sid))
+
 socketio.run(app, host='0.0.0.0', port=port)

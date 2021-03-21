@@ -1,11 +1,10 @@
 from .db import db
-from flask_mongoengine import BaseQuerySet
 import datetime
 
 class GameBoardMapping(db.Document):
     gameId = db.StringField(required=True)
     boardId = db.StringField(required=True)
-    gameStatus = db.StringField(default="In Progress", choices=('In Progress', 'Completed'))
+    gameStatus = db.StringField(default="IN_PROGRESS", choices=('IN_PROGRESS', 'COMPLETED'))
     withEngine = db.BooleanField(default=True)
     side = db.StringField(default="white", choices=('white', 'black'))
 
