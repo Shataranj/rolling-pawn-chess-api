@@ -175,7 +175,7 @@ def add_board(current_user):
         }
 
     ChessGame(gameId=game_id, currentFen=str(board.fen()), engineLevel=engine_level, currentTurn=current_turn).save()
-
+    socketio.emit("create_game", str(board.fen()), broadcast=True)
     return {
                'game_id': game_id,
                'board_id': board_id,
@@ -257,8 +257,9 @@ def move_to_ui(current_user):
         }
 
         if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
+            print("Came here once...")
             ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
-            socketio.emit("move", response, broadcast=True)
+            socketio.emit("move", str(board.fen()), broadcast=True)
             return response, 201
 
         return {'message': 'Invalid move'}, 400
