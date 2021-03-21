@@ -191,81 +191,54 @@ def add_board(current_user):
 @cross_origin()
 @token_required
 def play_with_ai(current_user):
-    body = request.get_json()
-    game_id = body.get('game_id')
-    user_move = "{0}{1}".format(body.get("from"), body.get("to"))
-    game_over = False
-
-    game_obj = ChessGame.objects(gameId=game_id).first()
-    engine_level = game_obj.engineLevel
-    current_fen = game_obj.currentFen
-    board = chess.Board(current_fen)
-    board.push_uci(user_move)
-
-    if not board.is_checkmate():
-        result = engine.play(board, chess.engine.Limit(depth=engine_level))
-        board.push_uci(str(result.move))
-    else:
-        game_over = True
-        ChessGame.objects(gameId=game_id).update(set__result=board.result())
-        GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="Completed")
-
-    if board.is_checkmate():
-        game_over = True
-        ChessGame.objects(gameId=game_id).update(set__result=board.result())
-        GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="Completed")
-
-    current_turn = "white" if board.turn else "black"
-    ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
-    ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
-
-    response = {
-        "engine_move":
-            {
-                "from": str(result.move)[:2],
-                "to": str(result.move)[2:4]
-            },
-        "fen": board.fen(),
-        "game_over": game_over
-    }
-    return response, 201
-
-
-@app.route('/move', methods=['POST'])
-@cross_origin()
-@token_required
-def move_to_ui(current_user):
-    body = request.get_json()
     try:
+        body = request.get_json()
         gamePlaySchema.validate(body)
-        game_id = body.get("game_id")
-        from_sq = body.get("from")
-        to_sq = body.get("to")
-        games = ChessGame.objects(gameId=game_id)
-        if not games:
-            return {'message': 'Invalid game Id'}, 400
+        game_id = body.get('game_id')
+        user_move = "{0}{1}".format(body.get("from"), body.get("to"))
+        game_over = False
 
-        board = chess.Board()
-        for move in games[0].moves:
-            board.push_uci(move)
+        game_obj = ChessGame.objects(gameId=game_id).first()
+        if not game_obj:
+                return {'message': 'Invalid game Id'}, 400
+        engine_level = game_obj.engineLevel
+        current_fen = game_obj.currentFen
+        board = chess.Board(current_fen)
+
+        if not chess.Move.from_uci(user_move) in board.legal_moves:
+            return {'message': 'Invalid move'}, 400
+
+        board.push_uci(user_move)
+        ChessGame.objects(gameId=game_id).update(push__moves=user_move)
+
+        if not board.is_checkmate():
+            result = engine.play(board, chess.engine.Limit(depth=engine_level))
+            board.push_uci(str(result.move))
+            ChessGame.objects(gameId=game_id).update(push__moves=str(result.move))
+        if board.is_checkmate():
+            game_over = True
+            ChessGame.objects(gameId=game_id).update(set__result=board.result())
+            GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="COMPLETED")
+            socketio.emit("game_over", "", broadcast=True)
+
+        current_turn = "white" if board.turn else "black"
+        ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
+        ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
+
+        socketio.emit("move", str(board.fen()), broadcast=True)
 
         response = {
-            "from": from_sq,
-            "to": to_sq,
-            "game_id": game_id,
-            "fen": board.fen()
+            "engine_move":
+                {
+                    "from": str(result.move)[:2],
+                    "to": str(result.move)[2:4]
+                },
+            "fen": board.fen(),
+            "game_over": game_over
         }
-
-        if chess.Move.from_uci(from_sq + to_sq) in board.legal_moves:
-            board.push_uci(from_sq + to_sq)
-            ChessGame.objects(gameId=game_id).update(push__moves=from_sq + to_sq)
-            socketio.emit("move", str(board.fen()), broadcast=True)
-            return response, 201
-
-        return {'message': 'Invalid move'}, 400
+        return response, 201    
     except Exception as e:
-        return {'error': str(e)}, 400
-
+        return {'error': str(e)}, 500
 
 @app.route('/get_all_games', methods=['GET'])
 @cross_origin()
