@@ -2,6 +2,7 @@ import json
 import os
 import platform
 import uuid
+import logging
 from datetime import datetime
 from functools import wraps
 
@@ -28,7 +29,7 @@ app.config['MONGODB_SETTINGS'] = {
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
-socketio = SocketIO(app, cors_allowed_origins=['*'])
+socketio = SocketIO(app, cors_allowed_origins=['*'], logger=True, engineio_logger=True)
 
 initialize_db(app)
 
@@ -36,7 +37,7 @@ platform_name = platform.platform()
 platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 
 engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
-
+logging.basicConfig(level=logging.INFO)
 
 
 def token_required(f):
@@ -310,4 +311,4 @@ port = int(os.environ.get("PORT", 5000))
 def onNewConnection():
     print("%s connected" % (request.sid))
 
-socketio.run(app, host='0.0.0.0', port=port)
+socketio.run(app, host='0.0.0.0', port=port, log_output=True)
