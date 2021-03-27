@@ -113,13 +113,21 @@ def get_my_games(current_user):
 
     for game_board_mapping in user_games_board_mapping:
         game = ChessGame.objects(gameId= game_board_mapping.gameId).first()
+        result = '*'
+        if(game.result == '1-0'):
+            result = 'WON' if game_board_mapping.side == 'white' else 'LOST'
+        elif(game.result == '0-1'):
+            result = 'LOST' if game_board_mapping.side == 'white' else 'WON'
+        else:
+            result = 'DRAWN'
+
         user_games.append({
             "game_id": game_board_mapping.gameId,
             "with_engine": game_board_mapping.withEngine,
             "game_status": game_board_mapping.gameStatus,
+            "result": result,
             "created_at": game.createdAt,
-            "player_1": current_user.userId,
-            "player_2": "Engine"})
+            "opponent": "Engine"})
 
     response = {
         "games": user_games,
@@ -225,15 +233,13 @@ def play_with_ai(current_user):
         current_turn = "white" if board.turn else "black"
         ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
         ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
-
+        
         socketio.emit("move", str(board.fen()), broadcast=True)
+        engine_move = {} if result is None else {"from": str(result.move)[:2], "to": str(result.move)[2:4]}
+
 
         response = {
-            "engine_move":
-                {
-                    "from": str(result.move)[:2],
-                    "to": str(result.move)[2:4]
-                },
+            "engine_move": engine_move,
             "fen": board.fen(),
             "game_over": game_over
         }
