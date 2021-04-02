@@ -17,6 +17,7 @@ from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
 from flask_socketio import SocketIO
 from validation_schema import userRegistrationSchema, gamePlaySchema
+from socket_io_manager import SocketIOManager
 
 app = Flask(__name__)
 cors = CORS(app)
@@ -29,15 +30,19 @@ app.config['MONGODB_SETTINGS'] = {
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
-socketio = SocketIO(app, cors_allowed_origins=['*'], logger=True, engineio_logger=True)
+socketio = SocketIO(app, cors_allowed_origins=[
+                    '*'], logger=True, engineio_logger=True)
 
 initialize_db(app)
 
 platform_name = platform.platform()
 platform_folder = 'linux' if platform_name.startswith('Linux') else 'mac'
 
-engine = chess.engine.SimpleEngine.popen_uci("rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
+engine = chess.engine.SimpleEngine.popen_uci(
+    "rolling_pawn/stockfish/{0}/stockfish-11".format(platform_folder))
 logging.basicConfig(level=logging.INFO)
+
+socketio_manager = SocketIOManager(socketio)
 
 
 def token_required(f):
@@ -50,7 +55,8 @@ def token_required(f):
             return jsonify({'message': 'auth token is missing'}), 403
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'])
-            current_user = UserProfile.objects(userId=data.get('user_id')).first()
+            current_user = UserProfile.objects(
+                userId=data.get('user_id')).first()
         except:
             return jsonify({'message': 'Token is invalid'}), 403
 
@@ -74,17 +80,19 @@ def register():
         board_id = body.get('board_id')
         user_id = body.get('user_id')
         user_email = body.get('user_email')
-        user_password = bcrypt.generate_password_hash(password=body.get('user_password')).decode('utf-8')
+        user_password = bcrypt.generate_password_hash(
+            password=body.get('user_password')).decode('utf-8')
         user_available = UserProfile.objects(userId=user_id)
         if len(user_available) == 0:
-            UserProfile(userId=user_id, boardId=board_id, userEmail=user_email, userPassword=user_password).save()
+            UserProfile(userId=user_id, boardId=board_id,
+                        userEmail=user_email, userPassword=user_password).save()
             new_profile = UserProfile.objects(userId=user_id)[0]
             return {
-                       'board_id': new_profile.boardId,
-                       'user_id': new_profile.userId,
-                       'user_email': new_profile.userEmail,
-                       'token': get_token(new_profile)
-                   }, 201
+                'board_id': new_profile.boardId,
+                'user_id': new_profile.userId,
+                'user_email': new_profile.userEmail,
+                'token': get_token(new_profile)
+            }, 201
         else:
             return jsonify({'message': 'User ID is not available'}), 400
     except Exception as e:
@@ -108,11 +116,12 @@ def login():
 @token_required
 def get_my_games(current_user):
     game_status = request.args.get('status')
-    user_games_board_mapping = GameBoardMapping.objects(boardId=current_user.boardId, gameStatus=game_status)
+    user_games_board_mapping = GameBoardMapping.objects(
+        boardId=current_user.boardId, gameStatus=game_status)
     user_games = []
 
     for game_board_mapping in user_games_board_mapping:
-        game = ChessGame.objects(gameId= game_board_mapping.gameId).first()
+        game = ChessGame.objects(gameId=game_board_mapping.gameId).first()
         result = '*'
         if(game.result == '1-0'):
             result = 'WON' if game_board_mapping.side == 'white' else 'LOST'
@@ -141,9 +150,10 @@ def get_my_games(current_user):
 @token_required
 def get_user_profile(current_user):
     response = {
-        "user_name": current_user.userId,
-        "user_email": current_user.userEmail,
-        "user_board_id": current_user.boardId
+        "user_id": current_user.userId,
+        "email": current_user.userEmail,
+        "first_name": "Dheeraj",
+        "last_name": "Pundir"
     }
     return jsonify(response), 200
 
@@ -170,7 +180,8 @@ def add_board(current_user):
             result = engine.play(board, chess.engine.Limit(depth=engine_level))
             board.push_uci(str(result.move))
 
-    game_board = GameBoardMapping(gameId=game_id, boardId=board_id, withEngine=with_engine).save()
+    game_board = GameBoardMapping(
+        gameId=game_id, boardId=board_id, withEngine=with_engine).save()
     game_id = game_board.gameId
     status = game_board.gameStatus
     game_started_with = "Game started with Stockfish Engine" if with_engine else "Game started with other player"
@@ -183,17 +194,18 @@ def add_board(current_user):
             "to": str(result.move)[2:4]
         }
 
-    ChessGame(gameId=game_id, currentFen=str(board.fen()), engineLevel=engine_level, currentTurn=current_turn).save()
+    ChessGame(gameId=game_id, currentFen=str(board.fen()),
+              engineLevel=engine_level, currentTurn=current_turn).save()
     socketio.emit("create_game", str(board.fen()), broadcast=True)
     return {
-               'game_id': game_id,
-               'board_id': board_id,
-               'status': status,
-               'game_with': game_started_with,
-               'player_side': player_side,
-               'engine_level': engine_level,
-               'initial_move': initial_move
-           }, 201
+        'game_id': game_id,
+        'board_id': board_id,
+        'status': status,
+        'game_with': game_started_with,
+        'player_side': player_side,
+        'engine_level': engine_level,
+        'initial_move': initial_move
+    }, 201
 
 
 @app.route('/play', methods=['POST'])
@@ -209,7 +221,7 @@ def play_with_ai(current_user):
 
         game_obj = ChessGame.objects(gameId=game_id).first()
         if not game_obj:
-                return {'message': 'Invalid game Id'}, 400
+            return {'message': 'Invalid game Id'}, 400
         engine_level = game_obj.engineLevel
         current_fen = game_obj.currentFen
         board = chess.Board(current_fen)
@@ -223,36 +235,42 @@ def play_with_ai(current_user):
         if not board.is_checkmate():
             result = engine.play(board, chess.engine.Limit(depth=engine_level))
             board.push_uci(str(result.move))
-            ChessGame.objects(gameId=game_id).update(push__moves=str(result.move))
+            ChessGame.objects(gameId=game_id).update(
+                push__moves=str(result.move))
         if board.is_checkmate():
             game_over = True
-            ChessGame.objects(gameId=game_id).update(set__result=board.result())
-            GameBoardMapping.objects(gameId=game_id).update(set__gameStatus="COMPLETED")
-            socketio.emit("game_over", "", broadcast=True)
+            ChessGame.objects(gameId=game_id).update(
+                set__result=board.result())
+            GameBoardMapping.objects(gameId=game_id).update(
+                set__gameStatus="COMPLETED")
+            # socketio.emit("game_over", "", broadcast=True)
 
         current_turn = "white" if board.turn else "black"
-        ChessGame.objects(gameId=game_id).update(set__currentFen=str(board.fen()))
+        ChessGame.objects(gameId=game_id).update(
+            set__currentFen=str(board.fen()))
         ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
-        
-        socketio.emit("move", str(board.fen()), broadcast=True)
-        engine_move = {} if result is None else {"from": str(result.move)[:2], "to": str(result.move)[2:4]}
 
+        socketio_manager.emit_to_user(current_user.user_id, "move", str(board.fen()))
+        engine_move = {} if result is None else {
+            "from": str(result.move)[:2], "to": str(result.move)[2:4]}
 
         response = {
             "engine_move": engine_move,
             "fen": board.fen(),
             "game_over": game_over
         }
-        return response, 201    
+        return response, 201
     except Exception as e:
         return {'error': str(e)}, 500
+
 
 @app.route('/get_all_games', methods=['GET'])
 @cross_origin()
 @token_required
 def get_games(current_user):
     status = request.args.get('status')
-    game_board = GameBoardMapping.objects(gameStatus=status) if status else GameBoardMapping.objects()
+    game_board = GameBoardMapping.objects(
+        gameStatus=status) if status else GameBoardMapping.objects()
     result = []
     for game in game_board:
         result.append({
@@ -288,7 +306,8 @@ def get_pgn(current_user):
     game_board = ChessGame.objects(gameId=game_id)
     if game_board:
         board = chess.Board()
-        pgn = board.variation_san([chess.Move.from_uci(m) for m in game_board[0].moves])
+        pgn = board.variation_san([chess.Move.from_uci(m)
+                                  for m in game_board[0].moves])
         return {'pgn': pgn}, 200
     return {'message': 'Invalid game Id'}, 400
 
@@ -307,14 +326,29 @@ def get_score(current_user):
     for move in games[0].moves:
         board.push_uci(move)
         info = engine.analyse(board, chess.engine.Limit(depth=depth))
-        scores.append({'move': move, 'score': info.get('score').white().score()})
+        scores.append(
+            {'move': move, 'score': info.get('score').white().score()})
     return {'scores': scores}, 200
 
 
 port = int(os.environ.get("PORT", 5000))
 
+
 @socketio.on('connect')
-def onNewConnection():
-    print("%s connected" % (request.sid))
+def on_new_connection():
+    print("Client connected ---->" + (str(request.sid)))
+
+
+@socketio.on('disconnect')
+def on_disconnect():
+    print("Client disconnected ---->" + (str(request.sid)))
+    socketio_manager.remove_session(request.sid)
+
+
+@socketio.on('new_user')
+def on_new_user(user_id):
+    print("User registered ---->" + user_id)
+    socketio_manager.add_session(request.sid, user_id)
+
 
 socketio.run(app, host='0.0.0.0', port=port, log_output=True)
