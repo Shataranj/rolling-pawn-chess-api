@@ -10,8 +10,8 @@ class SocketIOManager:
     def add_session(self, session_id, user_id):
         if user_id not in self.sessions_by_user:
             self.sessions_by_user[user_id] = set()
-            self.user_by_session[session_id] = user_id
 
+        self.user_by_session[session_id] = user_id
         self.sessions_by_user[user_id].add(session_id)
 
     def emit_to_user(self, user_id, event, data):
