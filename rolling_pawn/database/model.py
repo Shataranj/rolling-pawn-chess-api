@@ -1,26 +1,21 @@
 from .db import db
 import datetime
-
-class GameBoardMapping(db.Document):
-    gameId = db.StringField(required=True)
-    boardId = db.StringField(required=True)
-    gameStatus = db.StringField(default="IN_PROGRESS", choices=('IN_PROGRESS', 'COMPLETED'))
-    withEngine = db.BooleanField(default=True)
-    side = db.StringField(default="white", choices=('white', 'black'))
-
-class ChessGame(db.Document):
-    gameId = db.StringField(required=True, primary_key=True)
-    currentFen = db.StringField(required=True)
+class Game(db.Document):
+    game_id = db.StringField(required=True, primary_key=True)
     moves = db.ListField(default=[])
     result = db.StringField(required=True, default="*", choices=('1-0','0-1','1/2-1/2','*'))
-    withEngine = db.BooleanField()
-    engineLevel = db.IntField(default=4)
-    currentTurn = db.StringField(required=True, choices=('white', 'black'))
-    createdAt = db.DateTimeField(default=datetime.datetime.utcnow)
+    status = db.StringField(required=True, default="IN_PROGRESS", choices=('IN_PROGRESS','COMPLETED'))
+    host_id = db.StringField(required=True, max_length=20)
+    host_side = db.StringField(required=True, default="WHITE", choices=('WHITE', 'BLACK'))
+    opponent_type = db.StringField(required=True, default="ENGINE", choices=('ENGINE', 'USER', 'GUEST'))
+    opponent = db.StringField(required=True, max_length=80)
+    created_at = db.DateTimeField(default=datetime.datetime.utcnow)
 
-class UserProfile(db.Document):
-    boardId = db.StringField(required=True, max_length=80)
-    userId = db.StringField(required=True, max_length=20, primary_key=True)
-    userEmail = db.EmailField(max_length=80, required=True, unique=True)
-    userPassword = db.StringField(max_length=80, required=True)
-    isAdmin = db.BooleanField(default=False)
+class User(db.Document):
+    username = db.StringField(required=True, max_length=20, primary_key=True)
+    email = db.EmailField(max_length=80, required=True, unique=True)
+    password = db.StringField(max_length=80, required=True)
+    firstname = db.StringField(max_length=80, required=True)
+    lastname = db.StringField(max_length=80, required=True)
+    created_at = db.DateTimeField(default=datetime.datetime.utcnow)
+    gender = db.StringField(required=True, choices=('M','F','O','U'))

@@ -11,12 +11,12 @@ import chess.engine
 import chess.pgn
 import jwt
 from database.db import initialize_db
-from database.model import GameBoardMapping, ChessGame, UserProfile
+from database.model import Game, User
 from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
 from flask_socketio import SocketIO
-from validation_schema import userRegistrationSchema, gamePlaySchema
+# from validation_schema import userRegistrationSchema, gamePlaySchema
 from socket_io_manager import SocketIOManager
 
 app = Flask(__name__)
@@ -55,8 +55,8 @@ def token_required(f):
             return jsonify({'message': 'auth token is missing'}), 403
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'])
-            current_user = UserProfile.objects(
-                userId=data.get('user_id')).first()
+            current_user = User.objects(
+                username=data.get('username')).first()
         except:
             return jsonify({'message': 'Token is invalid'}), 403
 
@@ -67,8 +67,7 @@ def token_required(f):
 
 def get_token(profile):
     return jwt.encode(
-        {'user_id': profile.userId, 'user_email': profile.userEmail, 'board_id': profile.boardId,
-         'iat': datetime.utcnow()},
+        {'username': profile.username, 'iat': datetime.utcnow()},
         app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
 
 
@@ -76,21 +75,26 @@ def get_token(profile):
 def register():
     body = request.get_json()
     try:
-        userRegistrationSchema.validate(body)
-        board_id = body.get('board_id')
-        user_id = body.get('user_id')
-        user_email = body.get('user_email')
+        # userRegistrationSchema.validate(body)
+        username = body.get('username')
+        user_email = body.get('email')
+        firstname = body.get('firstname')
+        lastname = body.get('lastname')
+        gender = body.get('gender')
+        password = body.get('password')
+
         user_password = bcrypt.generate_password_hash(
-            password=body.get('user_password')).decode('utf-8')
-        user_available = UserProfile.objects(userId=user_id)
-        if len(user_available) == 0:
-            UserProfile(userId=user_id, boardId=board_id,
-                        userEmail=user_email, userPassword=user_password).save()
-            new_profile = UserProfile.objects(userId=user_id)[0]
+            password=password).decode('utf-8')
+
+        users_registered = User.objects(username=username)
+        if len(users_registered) == 0:
+            print("CAME HERE----")
+            User(username=username, email=user_email, password=user_password,
+                 gender=gender, firstname=firstname, lastname=lastname).save()
+            new_profile = User.objects(username=username)[0]
             return {
-                'board_id': new_profile.boardId,
-                'user_id': new_profile.userId,
-                'user_email': new_profile.userEmail,
+                'username': new_profile.username,
+                'email': new_profile.email,
                 'token': get_token(new_profile)
             }, 201
         else:
@@ -102,13 +106,13 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     body = request.get_json()
-    email = body.get('user_email')
-    password = body.get('user_password')
-    profiles = UserProfile.objects(userEmail=email)
-    if profiles and bcrypt.check_password_hash(profiles[0].userPassword, password):
+    username = body.get('username')
+    password = body.get('password')
+    profiles = User.objects(username=username)
+    if profiles and bcrypt.check_password_hash(profiles[0].password, password):
         token = get_token(profiles[0])
         return {'token': token}, 200
-    return {'message': 'Invalid email or password'}, 401
+    return {'message': 'Invalid username or password'}, 401
 
 
 @app.route('/my_games', methods=['GET'])
@@ -162,49 +166,33 @@ def get_user_profile(current_user):
 @cross_origin()
 @token_required
 def add_board(current_user):
-    board = chess.Board()
-
     body = request.get_json()
+
+    player_side = body.get('color').upper()
+    opponent_type = body.get('opponent_type').upper()
+    opponent = body.get('opponent')
+
     game_id = str(uuid.uuid4())
-    board_id = body.get('board_id')
-    player_side = body.get('color')
-    with_engine = False
-    # TODO: Set correct default value.
-    engine_level = 1
-    initial_move = {}
+    game = Game(game_id=game_id, host_id=current_user.username,
+                host_side=player_side, opponent_type=opponent_type, opponent=opponent)
 
-    if body.get('with_engine'):
-        with_engine = True
-        engine_level = body.get('engine_level')
-        if player_side is 'black':
-            result = engine.play(board, chess.engine.Limit(depth=engine_level))
-            board.push_uci(str(result.move))
+    game.save()
 
-    game_board = GameBoardMapping(
-        gameId=game_id, boardId=board_id, withEngine=with_engine).save()
-    game_id = game_board.gameId
-    status = game_board.gameStatus
-    game_started_with = "Game started with Stockfish Engine" if with_engine else "Game started with other player"
-    current_turn = "white" if board.turn else "black"
-    if player_side == "black":
-        result = engine.play(board, chess.engine.Limit(depth=engine_level))
+    if opponent_type == 'ENGINE' and player_side == 'BLACK':
+        board = chess.Board()
+        level = opponent.split('_')[-1]
+        result = engine.play(board, chess.engine.Limit(depth=int(level)))
         board.push_uci(str(result.move))
-        initial_move["engine_move"] = {
-            "from": str(result.move)[:2],
-            "to": str(result.move)[2:4]
-        }
+        game.update(push__moves=str(result.move))
+        # make it async
+        socketio_manager.emit_to_user(current_user.username, 'move', board.fen())
 
-    ChessGame(gameId=game_id, currentFen=str(board.fen()),
-              engineLevel=engine_level, currentTurn=current_turn).save()
-    socketio.emit("create_game", str(board.fen()), broadcast=True)
     return {
         'game_id': game_id,
-        'board_id': board_id,
-        'status': status,
-        'game_with': game_started_with,
-        'player_side': player_side,
-        'engine_level': engine_level,
-        'initial_move': initial_move
+        'status': game.status,
+        'opponent_type': opponent_type,
+        'color': player_side,
+        'opponent': opponent
     }, 201
 
 
