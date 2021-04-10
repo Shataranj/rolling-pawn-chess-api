@@ -12,6 +12,7 @@ import chess.pgn
 import jwt
 from database.db import initialize_db
 from database.model import Game, User
+from bson.objectid import ObjectId
 from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
@@ -183,7 +184,7 @@ def add_board(current_user):
 
     player_side = body.get('color').upper()
     opponent_type = body.get('opponent_type').upper()
-    opponent = body.get('opponent')
+    opponent = body.get('opponent').lower()
 
     game_in_progress = Game.objects(
         host_id=current_user.username, status='IN_PROGRESS').first()
@@ -217,58 +218,79 @@ def add_board(current_user):
     }, 201
 
 
+def play_with_user(board, game, user_move, current_user):
+    player_with_turn = game.opponent
+    player_not_with_turn = game.host_id
+    if (game.host_side == 'WHITE') == board.turn:
+        player_with_turn = game.host_id
+        player_not_with_turn = game.opponent
+
+    if not player_with_turn == current_user.username:
+        return {'error': 'Not your turn'}, 400
+
+    board.push_uci(user_move)
+    game.update(push__moves=user_move)
+    socketio_manager.emit_to_user(player_not_with_turn, 'move', board.fen())
+
+    return {'move': user_move}, 200
+
+#No need to emit the move using SocketIO because both players
+#Will be playing from same App/Board
+def play_with_guest(board, game, user_move):
+    board.push_uci(user_move)
+    game.update(push__moves=user_move)
+    return {'move': user_move}, 200
+
+
+def play_with_engine(board, game, user_move, current_user):
+    board.push_uci(user_move)
+    engine_level = int(game.opponent.split('_')[-1])
+    result = engine.play(board, chess.engine.Limit(depth=engine_level))
+    engine_move = str(result.move)
+    board.push_uci(str(result.move))
+    game.update(push_all__moves=[user_move, engine_move])
+
+    # We need emit this with some delay
+    socketio_manager.emit_to_user(current_user.username, 'move', board.fen())
+
+    return {'move': user_move, 'engine_move': engine_move}, 200
+
+
 @app.route('/play', methods=['POST'])
 @cross_origin()
 @token_required
-def play_with_ai(current_user):
+def play_move(current_user):
     try:
         body = request.get_json()
-        gamePlaySchema.validate(body)
+        # gamePlaySchema.validate(body)
         game_id = body.get('game_id')
         user_move = "{0}{1}".format(body.get("from"), body.get("to"))
-        game_over = False
 
-        game_obj = ChessGame.objects(gameId=game_id).first()
-        if not game_obj:
-            return {'message': 'Invalid game Id'}, 400
-        engine_level = game_obj.engineLevel
-        current_fen = game_obj.currentFen
-        board = chess.Board(current_fen)
+        query = {'_id': ObjectId(game_id),
+                 '$or': [{'opponent': current_user.username},
+                         {'host_id': current_user.username}]}
+        game = Game.objects(__raw__=query).first()
+
+        if game is None:
+            return {'error': 'Invalid game Id'}, 400
+
+        board = chess.Board()
+        for move in game.moves:
+            board.push_uci(move)
 
         if not chess.Move.from_uci(user_move) in board.legal_moves:
-            return {'message': 'Invalid move'}, 400
+            return {'error': 'Invalid move'}, 400
 
-        board.push_uci(user_move)
-        ChessGame.objects(gameId=game_id).update(push__moves=user_move)
+        # When playing with other user registered on platform
+        if game.opponent_type == 'USER':
+            return play_with_user(board.copy(), game, user_move, current_user)
 
-        if not board.is_checkmate():
-            result = engine.play(board, chess.engine.Limit(depth=engine_level))
-            board.push_uci(str(result.move))
-            ChessGame.objects(gameId=game_id).update(
-                push__moves=str(result.move))
-        if board.is_checkmate():
-            game_over = True
-            ChessGame.objects(gameId=game_id).update(
-                set__result=board.result())
-            GameBoardMapping.objects(gameId=game_id).update(
-                set__gameStatus="COMPLETED")
-            # socketio.emit("game_over", "", broadcast=True)
+        if game.opponent_type == 'GUEST':
+            return play_with_guest(board.copy(), game, user_move)
 
-        current_turn = "white" if board.turn else "black"
-        ChessGame.objects(gameId=game_id).update(
-            set__currentFen=str(board.fen()))
-        ChessGame.objects(gameId=game_id).update(set__currentTurn=current_turn)
+        if game.opponent_type == 'ENGINE':
+            return play_with_engine(board.copy(), game, user_move, current_user)
 
-        socketio_manager.emit_to_user(current_user.user_id, "move", str(board.fen()))
-        engine_move = {} if result is None else {
-            "from": str(result.move)[:2], "to": str(result.move)[2:4]}
-
-        response = {
-            "engine_move": engine_move,
-            "fen": board.fen(),
-            "game_over": game_over
-        }
-        return response, 201
     except Exception as e:
         return {'error': str(e)}, 500
 
