@@ -1,7 +1,6 @@
 from .db import db
 import datetime
 class Game(db.Document):
-    game_id = db.StringField(required=True, primary_key=True)
     moves = db.ListField(default=[])
     result = db.StringField(required=True, default="*", choices=('1-0','0-1','1/2-1/2','*'))
     status = db.StringField(required=True, default="IN_PROGRESS", choices=('IN_PROGRESS','COMPLETED'))

@@ -71,7 +71,7 @@ def get_token(profile):
         app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
 
 
-@app.route('/register', methods=['POST'])
+@app.route('/users', methods=['POST'])
 def register():
     body = request.get_json()
     try:
@@ -88,7 +88,6 @@ def register():
 
         users_registered = User.objects(username=username)
         if len(users_registered) == 0:
-            print("CAME HERE----")
             User(username=username, email=user_email, password=user_password,
                  gender=gender, firstname=firstname, lastname=lastname).save()
             new_profile = User.objects(username=username)[0]
@@ -103,7 +102,7 @@ def register():
         return {'error': str(e)}, 400
 
 
-@app.route('/login', methods=['POST'])
+@app.route('/sessions', methods=['POST'])
 def login():
     body = request.get_json()
     username = body.get('username')
@@ -115,38 +114,52 @@ def login():
     return {'message': 'Invalid username or password'}, 401
 
 
+def process_result(raw_result, player_side):
+    if raw_result == '*':
+        return raw_result
+    if raw_result == '1/2-1/2':
+        return 'DRAW'
+
+    if player_side.upper() == 'WHITE':
+        return 'WON' if raw_result == '1-0' else 'LOST'
+    if player_side.upper() == 'BLACK':
+        return 'WON' if raw_result == '0-1' else 'LOST'
+
+
 @app.route('/my_games', methods=['GET'])
 @cross_origin()
 @token_required
 def get_my_games(current_user):
-    game_status = request.args.get('status')
-    user_games_board_mapping = GameBoardMapping.objects(
-        boardId=current_user.boardId, gameStatus=game_status)
-    user_games = []
+    games = Game.objects(host_id=current_user.username, status='COMPLETED')
+    response = list(map(lambda game: ({
+        'game_id': str(game.id),
+        'result': process_result(game.result, game.host_side),
+        'opponent': game.opponent,
+        'opponent_type': game.opponent_type,
+        'created_at': str(game.created_at)
+    }), games))
 
-    for game_board_mapping in user_games_board_mapping:
-        game = ChessGame.objects(gameId=game_board_mapping.gameId).first()
-        result = '*'
-        if(game.result == '1-0'):
-            result = 'WON' if game_board_mapping.side == 'white' else 'LOST'
-        elif(game.result == '0-1'):
-            result = 'LOST' if game_board_mapping.side == 'white' else 'WON'
-        else:
-            result = 'DRAWN'
-
-        user_games.append({
-            "game_id": game_board_mapping.gameId,
-            "with_engine": game_board_mapping.withEngine,
-            "game_status": game_board_mapping.gameStatus,
-            "result": result,
-            "created_at": game.createdAt,
-            "opponent": "Engine"})
-
-    response = {
-        "games": user_games,
-        "board_id": current_user.boardId
-    }
     return jsonify(response), 200
+
+
+@app.route('/live_game', methods=['GET'])
+@cross_origin()
+@token_required
+def get_live_game(current_user):
+    game = Game.objects(host_id=current_user.username,
+                        status='IN_PROGRESS').first()
+    if game is None:
+        return {
+            'error': 'No live game'
+        }, 404
+
+    return {
+        'game_id': str(game.id),
+        'opponent': game.opponent,
+        'opponent_type': game.opponent_type,
+        'moves': game.moves,
+        'side': game.host_side
+    }, 200
 
 
 @app.route('/profile', methods=['GET'])
@@ -162,7 +175,7 @@ def get_user_profile(current_user):
     return jsonify(response), 200
 
 
-@app.route('/create_game', methods=['POST'])
+@app.route('/games', methods=['POST'])
 @cross_origin()
 @token_required
 def add_board(current_user):
@@ -172,9 +185,16 @@ def add_board(current_user):
     opponent_type = body.get('opponent_type').upper()
     opponent = body.get('opponent')
 
-    game_id = str(uuid.uuid4())
-    game = Game(game_id=game_id, host_id=current_user.username,
-                host_side=player_side, opponent_type=opponent_type, opponent=opponent)
+    game_in_progress = Game.objects(
+        host_id=current_user.username, status='IN_PROGRESS').first()
+
+    if game_in_progress is not None:
+        return {
+            'error': 'A game is already in progress'
+        }, 409
+
+    game = Game(host_id=current_user.username, host_side=player_side,
+                opponent_type=opponent_type, opponent=opponent)
 
     game.save()
 
@@ -185,10 +205,11 @@ def add_board(current_user):
         board.push_uci(str(result.move))
         game.update(push__moves=str(result.move))
         # make it async
-        socketio_manager.emit_to_user(current_user.username, 'move', board.fen())
+        socketio_manager.emit_to_user(
+            current_user.username, 'move', board.fen())
 
     return {
-        'game_id': game_id,
+        'game_id': str(game.id),
         'status': game.status,
         'opponent_type': opponent_type,
         'color': player_side,
