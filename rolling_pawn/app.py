@@ -138,15 +138,28 @@ def process_result(raw_result, player_side):
 @cross_origin()
 @token_required
 def get_my_games(current_user):
-    games = Game.objects(host_id=current_user.username, status='COMPLETED')
-    response = list(map(lambda game: ({
-        'game_id': str(game.id),
-        'result': process_result(game.result, game.host_side),
-        'opponent': game.opponent,
-        'opponent_type': game.opponent_type,
-        'created_at': str(game.created_at)
-    }), games))
+    query = {'status': 'COMPLETED',
+             '$or': [{'opponent': current_user.username},
+                     {'host_id': current_user.username}]}
 
+    games = Game.objects(__raw__=query)
+
+    def to_json(game):
+        result = process_result(game.result, game.host_side)
+        opponent = game.opponent
+        if game.opponent == current_user.username:
+            side = 'WHITE' if game.host_side == 'BLACK' else 'BLACK'
+            opponent = game.host_id
+            result = process_result(game.result, side)
+
+        return {
+            'game_id': str(game.id),
+            'result': result,
+            'opponent': opponent,
+            'opponent_type': game.opponent_type,
+            'created_at': str(game.created_at)}
+
+    response = list(map(to_json, games))
     return jsonify(response), 200
 
 
@@ -212,7 +225,8 @@ def add_board(current_user):
         result = engine.play(board, chess.engine.Limit(depth=int(level)))
         board.push_uci(str(result.move))
         game.update(push__moves=str(result.move))
-        # make it async
+
+        # Emit this with some delay
         socketio_manager.emit_to_user(
             current_user.username, 'move', board.fen())
 
@@ -240,22 +254,25 @@ def play_with_user(board, game, user_move, current_user):
     socketio_manager.emit_to_user(player_not_with_turn, 'move', board.fen())
 
     game_status = process_game_end(board, game)
-    
-    # Emit these events with some delay
-    socketio_manager.emit_to_user(game.opponent, 'game_ended', game_status)
-    socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+    if game_status['game_ended']:
+        # Emit these events with some delay
+        socketio_manager.emit_to_user(game.opponent, 'game_ended', game_status)
+        socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
 
     return {'move': user_move, **game_status}, 200
 
 # No need to emit the move using SocketIO because both players
 # Will be playing from same App/Board
+
+
 def play_with_guest(board, game, user_move):
     board.push_uci(user_move)
     game.update(push__moves=user_move)
     game_status = process_game_end(board, game)
 
-    # Emit this event with some delay
-    socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+    if game_status['game_ended']:
+        # Emit this event with some delay
+        socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
 
     return {'move': user_move, **game_status}, 200
 
@@ -279,8 +296,9 @@ def play_with_engine(board, game, user_move):
 
     game_status = process_game_end(board, game)
 
-    # We need emit this with some delay
-    socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+    if game_status['game_ended']:
+        # We need emit this with some delay
+        socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
 
     return {'move': user_move, 'engine_move': engine_move, **game_status}, 200
 
@@ -336,34 +354,36 @@ def play_move(current_user):
         return {'error': str(e)}, 500
 
 
-@app.route('/game', methods=['GET'])
+@app.route('/games/<game_id>', methods=['GET'])
 @cross_origin()
 @token_required
-def get_game(current_user):
-    game_id = request.args.get('gameId')
-    games = ChessGame.objects(gameId=game_id)
-    if games:
-        game = games[0]
-        board = chess.Board()
-        for move in game.moves:
-            board.push_uci(move)
-        return {"game_id": game.gameId,
-                "fen": board.fen()}, 200
-    return {'message': 'Invalid game Id'}, 400
+def get_game(current_user, game_id):
+    query = {'_id': ObjectId(game_id),
+             '$or': [{'opponent': current_user.username},
+                     {'host_id': current_user.username}]}
 
+    game = Game.objects(__raw__=query).first()
 
-@app.route('/pgn', methods=['GET'])
-@cross_origin()
-@token_required
-def get_pgn(current_user):
-    game_id = request.args.get('gameId')
-    game_board = ChessGame.objects(gameId=game_id)
-    if game_board:
-        board = chess.Board()
-        pgn = board.variation_san([chess.Move.from_uci(m)
-                                  for m in game_board[0].moves])
-        return {'pgn': pgn}, 200
-    return {'message': 'Invalid game Id'}, 400
+    if game is None:
+        return {'error': 'Game not found'}, 404
+
+    response = {
+        'game_id': str(game.id),
+        'result': process_result(game.result, game.host_side),
+        'opponent': game.opponent,
+        'moves': game.moves,
+        'side': game.host_side,
+        'opponent_type': game.opponent_type,
+        'created_at': str(game.created_at)
+    }
+
+    if game.opponent == current_user.username:
+        side = 'WHITE' if game.host_side == 'BLACK' else 'BLACK'
+        response['result'] = process_result(game.result, side)
+        response['opponent'] = game.host_id
+        response['side'] = side
+
+    return response, 200
 
 
 @app.route('/score', methods=['GET'])
