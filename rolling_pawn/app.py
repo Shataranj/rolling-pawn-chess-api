@@ -1,8 +1,6 @@
-import json
 import logging
 import os
 import platform
-import uuid
 from datetime import datetime
 from functools import wraps
 
@@ -207,7 +205,7 @@ def get_user_stats(current_user):
     query = {'status': 'COMPLETED',
              '$or': [{'opponent': current_user.username},
                      {'host_id': current_user.username}]}
-    
+
     games = Game.objects(__raw__=query)
     total_games = games.count()
     won_games = 0
