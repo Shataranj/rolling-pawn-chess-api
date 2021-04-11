@@ -196,13 +196,7 @@ def get_live_game(current_user):
 @cross_origin()
 @token_required
 def get_user_profile(current_user):
-    response = {
-        "user_id": current_user.userId,
-        "email": current_user.userEmail,
-        "first_name": "Dheeraj",
-        "last_name": "Pundir"
-    }
-    return jsonify(response), 200
+    return {k: current_user[k] for k in current_user if k not in ['password']}, 200
 
 
 @app.route('/games', methods=['POST'])
