@@ -115,16 +115,23 @@ def login():
     return {'message': 'Invalid username or password'}, 401
 
 
+def get_winner(raw_result):
+    if raw_result == '1/2-1/2':
+        return 'NONE'
+    if raw_result == '1-0':
+        return 'WHITE'
+    if raw_result == '0-1':
+        return 'BLACK'
+
+
 def process_result(raw_result, player_side):
     if raw_result == '*':
         return raw_result
     if raw_result == '1/2-1/2':
         return 'DRAW'
 
-    if player_side.upper() == 'WHITE':
-        return 'WON' if raw_result == '1-0' else 'LOST'
-    if player_side.upper() == 'BLACK':
-        return 'WON' if raw_result == '0-1' else 'LOST'
+    winner = get_winner(raw_result)
+    return 'WON' if winner == player_side.upper() else 'LOST'
 
 
 @app.route('/my_games', methods=['GET'])
@@ -232,28 +239,59 @@ def play_with_user(board, game, user_move, current_user):
     game.update(push__moves=user_move)
     socketio_manager.emit_to_user(player_not_with_turn, 'move', board.fen())
 
-    return {'move': user_move}, 200
+    game_status = process_game_end(board, game)
+    
+    # Emit these events with some delay
+    socketio_manager.emit_to_user(game.opponent, 'game_ended', game_status)
+    socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
 
-#No need to emit the move using SocketIO because both players
-#Will be playing from same App/Board
+    return {'move': user_move, **game_status}, 200
+
+# No need to emit the move using SocketIO because both players
+# Will be playing from same App/Board
 def play_with_guest(board, game, user_move):
     board.push_uci(user_move)
     game.update(push__moves=user_move)
-    return {'move': user_move}, 200
+    game_status = process_game_end(board, game)
+
+    # Emit this event with some delay
+    socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+
+    return {'move': user_move, **game_status}, 200
 
 
-def play_with_engine(board, game, user_move, current_user):
+def play_with_engine(board, game, user_move):
     board.push_uci(user_move)
+    game.update(push__moves=user_move)
+    game_status = process_game_end(board, game)
+
+    if game_status['game_ended']:
+        return {'move': user_move, 'engine_move': None, **game_status}
+
     engine_level = int(game.opponent.split('_')[-1])
     result = engine.play(board, chess.engine.Limit(depth=engine_level))
     engine_move = str(result.move)
     board.push_uci(str(result.move))
-    game.update(push_all__moves=[user_move, engine_move])
+    game.update(push__moves=engine_move)
 
     # We need emit this with some delay
-    socketio_manager.emit_to_user(current_user.username, 'move', board.fen())
+    socketio_manager.emit_to_user(game.host_id, 'move', board.fen())
 
-    return {'move': user_move, 'engine_move': engine_move}, 200
+    game_status = process_game_end(board, game)
+
+    # We need emit this with some delay
+    socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+
+    return {'move': user_move, 'engine_move': engine_move, **game_status}, 200
+
+
+def process_game_end(board, game):
+    if board.is_checkmate():
+        game.update(result=board.result(), status='COMPLETED')
+        winner = get_winner(board.result())
+        return {'game_ended': True, 'winner': winner}
+    else:
+        return {'game_ended': False, 'winner': None}
 
 
 @app.route('/play', methods=['POST'])
@@ -274,6 +312,9 @@ def play_move(current_user):
         if game is None:
             return {'error': 'Invalid game Id'}, 400
 
+        if game.status == 'COMPLETED':
+            return {'error': 'Game is already finished'}, 400
+
         board = chess.Board()
         for move in game.moves:
             board.push_uci(move)
@@ -289,28 +330,10 @@ def play_move(current_user):
             return play_with_guest(board.copy(), game, user_move)
 
         if game.opponent_type == 'ENGINE':
-            return play_with_engine(board.copy(), game, user_move, current_user)
+            return play_with_engine(board.copy(), game, user_move)
 
     except Exception as e:
         return {'error': str(e)}, 500
-
-
-@app.route('/get_all_games', methods=['GET'])
-@cross_origin()
-@token_required
-def get_games(current_user):
-    status = request.args.get('status')
-    game_board = GameBoardMapping.objects(
-        gameStatus=status) if status else GameBoardMapping.objects()
-    result = []
-    for game in game_board:
-        result.append({
-            "game_id": game.gameId,
-            "board_id": game.boardId,
-            "with_engine": game.withEngine,
-            "game_status": game.gameStatus})
-
-    return json.dumps(result), 200
 
 
 @app.route('/game', methods=['GET'])
