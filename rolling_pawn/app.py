@@ -134,6 +134,28 @@ def process_result(raw_result, player_side):
     return 'WON' if winner == player_side.upper() else 'LOST'
 
 
+def to_json(game, player_username):
+    result = process_result(game.result, game.host_side)
+    opponent = game.opponent
+    side = game.host_side
+    if game.opponent == player_username:
+        side = 'WHITE' if game.host_side == 'BLACK' else 'BLACK'
+        opponent = game.host_id
+        result = process_result(game.result, side)
+
+    return {
+        'game_id': str(game.id),
+        'result': result,
+        'raw_result': game.result,
+        'opponent': opponent,
+        'side': side,
+        'moves': game.moves,
+        'status': game.status,
+        'opponent_type': game.opponent_type,
+        'created_at': str(game.created_at)
+    }
+
+
 @app.route('/my_games', methods=['GET'])
 @cross_origin()
 @token_required
@@ -143,23 +165,12 @@ def get_my_games(current_user):
                      {'host_id': current_user.username}]}
 
     games = Game.objects(__raw__=query)
+    response = list()
+    for game in games:
+        game_json = to_json(game, current_user.username)
+        response.append({k: game_json[k] for k in [
+                        'game_id', 'result', 'opponent', 'opponent_type', 'created_at']})
 
-    def to_json(game):
-        result = process_result(game.result, game.host_side)
-        opponent = game.opponent
-        if game.opponent == current_user.username:
-            side = 'WHITE' if game.host_side == 'BLACK' else 'BLACK'
-            opponent = game.host_id
-            result = process_result(game.result, side)
-
-        return {
-            'game_id': str(game.id),
-            'result': result,
-            'opponent': opponent,
-            'opponent_type': game.opponent_type,
-            'created_at': str(game.created_at)}
-
-    response = list(map(to_json, games))
     return jsonify(response), 200
 
 
@@ -167,20 +178,18 @@ def get_my_games(current_user):
 @cross_origin()
 @token_required
 def get_live_game(current_user):
-    game = Game.objects(host_id=current_user.username,
-                        status='IN_PROGRESS').first()
-    if game is None:
-        return {
-            'error': 'No live game'
-        }, 404
+    query = {'status': 'IN_PROGRESS',
+             '$or': [{'opponent': current_user.username},
+                     {'host_id': current_user.username}]}
 
-    return {
-        'game_id': str(game.id),
-        'opponent': game.opponent,
-        'opponent_type': game.opponent_type,
-        'moves': game.moves,
-        'side': game.host_side
-    }, 200
+    game = Game.objects(__raw__=query).first()
+
+    if game is None:
+        return {'error': 'No live game'}, 404
+
+    game_json = to_json(game, current_user.username)
+    return {k: game_json[k] for k in [
+        'game_id', 'opponent', 'opponent_type', 'moves', 'side']}, 200
 
 
 @app.route('/profile', methods=['GET'])
@@ -367,23 +376,10 @@ def get_game(current_user, game_id):
     if game is None:
         return {'error': 'Game not found'}, 404
 
-    response = {
-        'game_id': str(game.id),
-        'result': process_result(game.result, game.host_side),
-        'opponent': game.opponent,
-        'moves': game.moves,
-        'side': game.host_side,
-        'opponent_type': game.opponent_type,
-        'created_at': str(game.created_at)
-    }
-
-    if game.opponent == current_user.username:
-        side = 'WHITE' if game.host_side == 'BLACK' else 'BLACK'
-        response['result'] = process_result(game.result, side)
-        response['opponent'] = game.host_id
-        response['side'] = side
-
-    return response, 200
+    game_json = to_json(game, current_user.username)
+    return {k: game_json[k] for k in [
+        'game_id', 'opponent', 'opponent_type',
+        'moves', 'side', 'result', 'created_at']}, 200
 
 
 @app.route('/score', methods=['GET'])
