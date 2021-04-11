@@ -4,7 +4,7 @@ from .db import db
 
 
 class Game(db.Document):
-    moves = db.ListField(default=[])
+    pgn = db.StringField(default='')
     result = db.StringField(required=True, default="*", choices=('1-0', '0-1', '1/2-1/2', '*'))
     status = db.StringField(required=True, default="IN_PROGRESS", choices=('IN_PROGRESS', 'COMPLETED'))
     host_id = db.StringField(required=True, max_length=20)

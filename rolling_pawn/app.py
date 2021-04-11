@@ -3,6 +3,7 @@ import os
 import platform
 from datetime import datetime
 from functools import wraps
+import io
 
 import chess
 import chess.engine
@@ -148,12 +149,14 @@ def to_json(game, player_username):
         'raw_result': game.result,
         'opponent': opponent,
         'side': side,
-        'moves': game.moves,
+        'pgn': game.pgn,
         'status': game.status,
         'opponent_type': game.opponent_type,
         'created_at': str(game.created_at)
     }
 
+def generate_pgn(board):
+    return chess.Board().variation_san([move for move in board.move_stack])
 
 @app.route('/my_games', methods=['GET'])
 @cross_origin()
@@ -188,7 +191,7 @@ def get_live_game(current_user):
 
     game_json = to_json(game, current_user.username)
     return {k: game_json[k] for k in [
-        'game_id', 'opponent', 'opponent_type', 'moves', 'side']}, 200
+        'game_id', 'opponent', 'opponent_type', 'pgn', 'side']}, 200
 
 
 @app.route('/profile', methods=['GET'])
@@ -253,7 +256,7 @@ def add_board(current_user):
         level = opponent.split('_')[-1]
         result = engine.play(board, chess.engine.Limit(depth=int(level)))
         board.push_uci(str(result.move))
-        game.update(push__moves=str(result.move))
+        game.update(pgn=generate_pgn(board))
 
         # Emit this with some delay
         socketio_manager.emit_to_user(
@@ -279,7 +282,7 @@ def play_with_user(board, game, user_move, current_user):
         return {'error': 'Not your turn'}, 400
 
     board.push_uci(user_move)
-    game.update(push__moves=user_move)
+    game.update(pgn=generate_pgn(board))
     socketio_manager.emit_to_user(player_not_with_turn, 'move', board.fen())
 
     game_status = process_game_end(board, game)
@@ -297,7 +300,7 @@ def play_with_user(board, game, user_move, current_user):
 
 def play_with_guest(board, game, user_move):
     board.push_uci(user_move)
-    game.update(push__moves=user_move)
+    game.update(pgn=generate_pgn(board))
     game_status = process_game_end(board, game)
 
     if game_status['game_ended']:
@@ -309,7 +312,7 @@ def play_with_guest(board, game, user_move):
 
 def play_with_engine(board, game, user_move):
     board.push_uci(user_move)
-    game.update(push__moves=user_move)
+    game.update(pgn=generate_pgn(board))
     game_status = process_game_end(board, game)
 
     if game_status['game_ended']:
@@ -319,7 +322,7 @@ def play_with_engine(board, game, user_move):
     result = engine.play(board, chess.engine.Limit(depth=engine_level))
     engine_move = str(result.move)
     board.push_uci(str(result.move))
-    game.update(push__moves=engine_move)
+    game.update(pgn=generate_pgn(board))
 
     # We need emit this with some delay
     socketio_manager.emit_to_user(game.host_id, 'move', board.fen())
@@ -332,7 +335,7 @@ def play_with_engine(board, game, user_move):
 
     return {'move': user_move, 'engine_move': engine_move, **game_status}, 200
 
-
+#TODO: Need to handle this properly. All the end cases are not covered
 def process_game_end(board, game):
     if board.is_checkmate():
         game.update(result=board.result(), status='COMPLETED')
@@ -363,9 +366,9 @@ def play_move(current_user):
         if game.status == 'COMPLETED':
             return {'error': 'Game is already finished'}, 400
 
-        board = chess.Board()
-        for move in game.moves:
-            board.push_uci(move)
+        pgn = io.StringIO(game.pgn)
+        game_from_pgn = chess.pgn.read_game(pgn)
+        board = game_from_pgn.end().board()
 
         if not chess.Move.from_uci(user_move) in board.legal_moves:
             return {'error': 'Invalid move'}, 400
@@ -400,7 +403,7 @@ def get_game(current_user, game_id):
     game_json = to_json(game, current_user.username)
     return {k: game_json[k] for k in [
         'game_id', 'opponent', 'opponent_type',
-        'moves', 'side', 'result', 'created_at']}, 200
+        'pgn', 'side', 'result', 'created_at']}, 200
 
 
 @app.route('/score', methods=['GET'])
