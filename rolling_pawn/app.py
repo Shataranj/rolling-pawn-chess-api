@@ -1,8 +1,8 @@
 import json
+import logging
 import os
 import platform
 import uuid
-import logging
 from datetime import datetime
 from functools import wraps
 
@@ -10,13 +10,14 @@ import chess
 import chess.engine
 import chess.pgn
 import jwt
-from database.db import initialize_db
-from database.model import Game, User
 from bson.objectid import ObjectId
 from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
 from flask_socketio import SocketIO
+
+from database.db import initialize_db
+from database.model import Game, User
 # from validation_schema import userRegistrationSchema, gamePlaySchema
 from socket_io_manager import SocketIOManager
 
@@ -32,7 +33,7 @@ app.config['MONGODB_SETTINGS'] = {
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
 socketio = SocketIO(app, cors_allowed_origins=[
-                    '*'], logger=True, engineio_logger=True)
+    '*'], logger=True, engineio_logger=True)
 
 initialize_db(app)
 
@@ -93,10 +94,10 @@ def register():
                  gender=gender, firstname=firstname, lastname=lastname).save()
             new_profile = User.objects(username=username)[0]
             return {
-                'username': new_profile.username,
-                'email': new_profile.email,
-                'token': get_token(new_profile)
-            }, 201
+                       'username': new_profile.username,
+                       'email': new_profile.email,
+                       'token': get_token(new_profile)
+                   }, 201
         else:
             return jsonify({'message': 'User ID is not available'}), 400
     except Exception as e:
@@ -169,7 +170,7 @@ def get_my_games(current_user):
     for game in games:
         game_json = to_json(game, current_user.username)
         response.append({k: game_json[k] for k in [
-                        'game_id', 'result', 'opponent', 'opponent_type', 'created_at']})
+            'game_id', 'result', 'opponent', 'opponent_type', 'created_at']})
 
     return jsonify(response), 200
 
@@ -199,6 +200,32 @@ def get_user_profile(current_user):
     return {k: current_user[k] for k in current_user if k not in ['password']}, 200
 
 
+@app.route('/profile/stats', methods=['GET'])
+@cross_origin()
+@token_required
+def get_user_profile(current_user):
+    query = {'status': 'COMPLETED',
+             '$or': [{'opponent': current_user.username},
+                     {'host_id': current_user.username}]}
+    games = Game.objects(__raw__=query)
+    total_games = games.count()
+    won_games = 0
+    draw_games = 0
+    for game in games:
+        game_json = to_json(game, current_user.username)
+        if game_json.get('result') == "WON":
+            won_games += 1
+        if game_json.get('result') == "DRAW":
+            draw_games += 1
+
+    return {
+        "won": won_games,
+        "draw": draw_games,
+        "lost": total_games - (won_games + draw_games),
+        "total": total_games
+    }
+
+
 @app.route('/games', methods=['POST'])
 @cross_origin()
 @token_required
@@ -214,8 +241,8 @@ def add_board(current_user):
 
     if game_in_progress is not None:
         return {
-            'error': 'A game is already in progress'
-        }, 409
+                   'error': 'A game is already in progress'
+               }, 409
 
     game = Game(host_id=current_user.username, host_side=player_side,
                 opponent_type=opponent_type, opponent=opponent)
@@ -234,12 +261,12 @@ def add_board(current_user):
             current_user.username, 'move', board.fen())
 
     return {
-        'game_id': str(game.id),
-        'status': game.status,
-        'opponent_type': opponent_type,
-        'color': player_side,
-        'opponent': opponent
-    }, 201
+               'game_id': str(game.id),
+               'status': game.status,
+               'opponent_type': opponent_type,
+               'color': player_side,
+               'opponent': opponent
+           }, 201
 
 
 def play_with_user(board, game, user_move, current_user):
@@ -263,6 +290,7 @@ def play_with_user(board, game, user_move, current_user):
         socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
 
     return {'move': user_move, **game_status}, 200
+
 
 # No need to emit the move using SocketIO because both players
 # Will be playing from same App/Board
