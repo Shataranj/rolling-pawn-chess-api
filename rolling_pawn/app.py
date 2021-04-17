@@ -93,10 +93,10 @@ def register():
                  gender=gender, firstname=firstname, lastname=lastname).save()
             new_profile = User.objects(username=username)[0]
             return {
-                       'username': new_profile.username,
-                       'email': new_profile.email,
-                       'token': get_token(new_profile)
-                   }, 201
+                'username': new_profile.username,
+                'email': new_profile.email,
+                'token': get_token(new_profile)
+            }, 201
         else:
             return jsonify({'message': 'User ID is not available'}), 400
     except Exception as e:
@@ -155,8 +155,10 @@ def to_json(game, player_username):
         'created_at': str(game.created_at)
     }
 
+
 def generate_pgn(board):
     return chess.Board().variation_san([move for move in board.move_stack])
+
 
 @app.route('/my_games', methods=['GET'])
 @cross_origin()
@@ -221,8 +223,8 @@ def get_user_stats(current_user):
             draw_games += 1
 
     return {
-        "won": won_games,
-        "draw": draw_games,
+        "wins": won_games,
+        "draws": draw_games,
         "lost": total_games - (won_games + draw_games),
         "total": total_games
     }
@@ -243,14 +245,26 @@ def add_board(current_user):
 
     if game_in_progress is not None:
         return {
-                   'error': 'A game is already in progress'
-               }, 409
+            'error': 'A game is already in progress'
+        }, 409
 
     game = Game(host_id=current_user.username, host_side=player_side,
                 opponent_type=opponent_type, opponent=opponent)
 
     game.save()
 
+    response = {
+        'game_id': str(game.id),
+        'status': game.status,
+        'opponent_type': opponent_type,
+        'color': player_side,
+        'opponent': opponent
+    }
+
+    # Emit event to players for game_created
+    socketio_manager.emit_to_user(current_user.username, 'game_created', response)
+    socketio_manager.emit_to_user(opponent, 'game_created', response)
+    
     if opponent_type == 'ENGINE' and player_side == 'BLACK':
         board = chess.Board()
         level = opponent.split('_')[-1]
@@ -262,13 +276,7 @@ def add_board(current_user):
         socketio_manager.emit_to_user(
             current_user.username, 'move', board.fen())
 
-    return {
-               'game_id': str(game.id),
-               'status': game.status,
-               'opponent_type': opponent_type,
-               'color': player_side,
-               'opponent': opponent
-           }, 201
+    return response, 201
 
 
 def play_with_user(board, game, user_move, current_user):
@@ -335,7 +343,9 @@ def play_with_engine(board, game, user_move):
 
     return {'move': user_move, 'engine_move': engine_move, **game_status}, 200
 
-#TODO: Need to handle this properly. All the end cases are not covered
+# TODO: Need to handle this properly. All the end cases are not covered
+
+
 def process_game_end(board, game):
     if board.is_checkmate():
         game.update(result=board.result(), status='COMPLETED')
