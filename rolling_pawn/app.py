@@ -98,7 +98,7 @@ def register():
                 'token': get_token(new_profile)
             }, 201
         else:
-            return jsonify({'message': 'User ID is not available'}), 400
+            return jsonify({'message': 'User already exists!'}), 409
     except Exception as e:
         return {'error': str(e)}, 400
 
