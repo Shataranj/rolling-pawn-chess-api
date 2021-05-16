@@ -291,7 +291,7 @@ def play_with_user(board, game, user_move, current_user):
 
     board.push_uci(user_move)
     game.update(pgn=generate_pgn(board))
-    socketio_manager.emit_to_user(player_not_with_turn, 'move', board.fen())
+    socketio_manager.emit_to_user(player_not_with_turn, 'move', user_move)
 
     game_status = process_game_end(board, game)
     if game_status['game_ended']:
@@ -333,7 +333,7 @@ def play_with_engine(board, game, user_move):
     game.update(pgn=generate_pgn(board))
 
     # We need emit this with some delay
-    socketio_manager.emit_to_user(game.host_id, 'move', board.fen())
+    socketio_manager.emit_to_user(game.host_id, 'move', engine_move)
 
     game_status = process_game_end(board, game)
 
