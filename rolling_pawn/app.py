@@ -257,7 +257,7 @@ def add_board(current_user):
         'game_id': str(game.id),
         'status': game.status,
         'opponent_type': opponent_type,
-        'color': player_side,
+        'side': player_side,
         'opponent': opponent
     }
 
@@ -273,8 +273,7 @@ def add_board(current_user):
         game.update(pgn=generate_pgn(board))
 
         # Emit this with some delay
-        socketio_manager.emit_to_user(
-            current_user.username, 'move', board.fen())
+        socketio_manager.emit_to_user(current_user.username, 'move', board.fen())
 
     return response, 201
 
@@ -378,7 +377,10 @@ def play_move(current_user):
 
         pgn = io.StringIO(game.pgn)
         game_from_pgn = chess.pgn.read_game(pgn)
-        board = game_from_pgn.end().board()
+        board = chess.Board()
+
+        if game_from_pgn is not None:
+            board = game_from_pgn.end().board()
 
         if not chess.Move.from_uci(user_move) in board.legal_moves:
             return {'error': 'Invalid move'}, 400
