@@ -4,11 +4,11 @@ import platform
 from datetime import datetime
 from functools import wraps
 import io
+import secrets
 
 import chess
 import chess.engine
 import chess.pgn
-import jwt
 from bson.objectid import ObjectId
 from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
@@ -16,7 +16,7 @@ from flask_cors import CORS, cross_origin
 from flask_socketio import SocketIO
 
 from database.db import initialize_db
-from database.model import Game, User
+from database.model import Game, User, Session
 # from validation_schema import userRegistrationSchema, gamePlaySchema
 from socket_io_manager import SocketIOManager
 
@@ -55,21 +55,19 @@ def token_required(f):
         if not token:
             return jsonify({'message': 'auth token is missing'}), 403
         try:
-            data = jwt.decode(token, app.config['SECRET_KEY'])
-            current_user = User.objects(
-                username=data.get('username')).first()
-        except:
-            return jsonify({'message': 'Token is invalid'}), 403
+            session = Session.objects.get(session_id=token)
+            current_user = User.objects.get(username=session.username)
 
-        return f(current_user, *args, **kwargs)
+        except:
+            return jsonify({'message': "Invalid token"}), 403
+
+        return f(current_user, session, *args, **kwargs)
 
     return decorated
 
 
-def get_token(profile):
-    return jwt.encode(
-        {'username': profile.username, 'iat': datetime.utcnow()},
-        app.config['SECRET_KEY'], algorithm='HS256').decode('utf-8')
+def get_token():
+    return secrets.token_urlsafe(32)
 
 
 @app.route('/users', methods=['POST'])
@@ -108,12 +106,18 @@ def login():
     body = request.get_json()
     username = body.get('username')
     password = body.get('password')
-    profiles = User.objects(username=username)
-    if profiles and bcrypt.check_password_hash(profiles[0].password, password):
-        token = get_token(profiles[0])
+    profile = User.objects(username=username).first()
+    if profile and bcrypt.check_password_hash(profile.password, password):
+        token = get_token()
+        Session(username=username, session_id=token).save()
         return {'token': token}, 200
     return {'message': 'Invalid username or password'}, 401
 
+@app.route('/sessions', methods=['DELETE'])
+@token_required
+def logout(current_user, session):
+    session.delete()
+    return '', 204
 
 def get_winner(raw_result):
     if raw_result == '1/2-1/2':
@@ -163,7 +167,7 @@ def generate_pgn(board):
 @app.route('/my_games', methods=['GET'])
 @cross_origin()
 @token_required
-def get_my_games(current_user):
+def get_my_games(current_user, session):
     query = {'status': 'COMPLETED',
              '$or': [{'opponent': current_user.username},
                      {'host_id': current_user.username}]}
@@ -181,7 +185,7 @@ def get_my_games(current_user):
 @app.route('/live_game', methods=['GET'])
 @cross_origin()
 @token_required
-def get_live_game(current_user):
+def get_live_game(current_user, session):
     query = {'status': 'IN_PROGRESS',
              '$or': [{'opponent': current_user.username},
                      {'host_id': current_user.username}]}
@@ -199,14 +203,14 @@ def get_live_game(current_user):
 @app.route('/profile', methods=['GET'])
 @cross_origin()
 @token_required
-def get_user_profile(current_user):
+def get_user_profile(current_user, session):
     return {k: current_user[k] for k in current_user if k not in ['password']}, 200
 
 
 @app.route('/profile/stats', methods=['GET'])
 @cross_origin()
 @token_required
-def get_user_stats(current_user):
+def get_user_stats(current_user, session):
     query = {'status': 'COMPLETED',
              '$or': [{'opponent': current_user.username},
                      {'host_id': current_user.username}]}
@@ -233,7 +237,7 @@ def get_user_stats(current_user):
 @app.route('/games', methods=['POST'])
 @cross_origin()
 @token_required
-def add_board(current_user):
+def add_board(current_user, session):
     body = request.get_json()
 
     player_side = body.get('color').upper()
@@ -262,9 +266,10 @@ def add_board(current_user):
     }
 
     # Emit event to players for game_created
-    socketio_manager.emit_to_user(current_user.username, 'game_created', response)
+    socketio_manager.emit_to_user(
+        current_user.username, 'game_created', response)
     socketio_manager.emit_to_user(opponent, 'game_created', response)
-    
+
     if opponent_type == 'ENGINE' and player_side == 'BLACK':
         board = chess.Board()
         level = opponent.split('_')[-1]
@@ -273,7 +278,8 @@ def add_board(current_user):
         game.update(pgn=generate_pgn(board))
 
         # Emit this with some delay
-        socketio_manager.emit_to_user(current_user.username, 'move', board.fen())
+        socketio_manager.emit_to_user(
+            current_user.username, 'move', board.fen())
 
     return response, 201
 
@@ -357,7 +363,7 @@ def process_game_end(board, game):
 @app.route('/play', methods=['POST'])
 @cross_origin()
 @token_required
-def play_move(current_user):
+def play_move(current_user, session):
     try:
         body = request.get_json()
         # gamePlaySchema.validate(body)
@@ -402,7 +408,7 @@ def play_move(current_user):
 @app.route('/games/<game_id>', methods=['GET'])
 @cross_origin()
 @token_required
-def get_game(current_user, game_id):
+def get_game(current_user, session, game_id):
     query = {'_id': ObjectId(game_id),
              '$or': [{'opponent': current_user.username},
                      {'host_id': current_user.username}]}
@@ -421,7 +427,7 @@ def get_game(current_user, game_id):
 @app.route('/score', methods=['GET'])
 @cross_origin()
 @token_required
-def get_score(current_user):
+def get_score(current_user, session):
     game_id = request.args.get('gameId')
     depth = request.args.get('depth')
     games = ChessGame.objects(gameId=game_id)

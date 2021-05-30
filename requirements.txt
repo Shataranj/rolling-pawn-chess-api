@@ -10,5 +10,3 @@ flask-bcrypt
 gevent-websocket
 # pyjwt
 schema
-PyJWT==1.4.0
-Flask-JWT

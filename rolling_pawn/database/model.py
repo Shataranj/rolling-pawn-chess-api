@@ -22,3 +22,8 @@ class User(db.Document):
     lastname = db.StringField(max_length=80, required=True)
     created_at = db.DateTimeField(default=datetime.datetime.utcnow)
     gender = db.StringField(required=True, choices=('M', 'F', 'O', 'U'))
+
+class Session(db.Document):
+    session_id = db.StringField(required=True, primary_key=True)
+    username = db.StringField(required=True, max_length=20)
+    created_at = db.DateTimeField(default=datetime.datetime.utcnow)
