@@ -24,7 +24,9 @@ app = Flask(__name__)
 cors = CORS(app)
 bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = "secret key"
+app.config[]
 
+print (os.environ.get('MONGO_ATLAS'))
 app.config['MONGODB_SETTINGS'] = {
     'host': os.environ.get('MONGO_ATLAS') or 'mongodb://127.0.0.1:27017/rolling_pawn_api'
 }
