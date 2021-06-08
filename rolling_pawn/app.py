@@ -94,7 +94,7 @@ def register():
             return {
                 'username': new_profile.username,
                 'email': new_profile.email,
-                'token': get_token(new_profile)
+                'token': get_token()
             }, 201
         else:
             return jsonify({'message': 'User already exists!'}), 409
