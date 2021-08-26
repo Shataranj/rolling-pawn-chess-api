@@ -67,8 +67,10 @@ def token_required(f):
     return decorated
 
 
-def get_token():
-    return secrets.token_urlsafe(32)
+def get_token(username):
+    token = secrets.token_urlsafe(32)
+    Session(username=username, session_id=token).save()
+    return token
 
 
 @app.route('/users', methods=['POST'])
@@ -94,7 +96,7 @@ def register():
             return {
                 'username': new_profile.username,
                 'email': new_profile.email,
-                'token': get_token()
+                'token': get_token(new_profile.username)
             }, 201
         else:
             return jsonify({'message': 'User already exists!'}), 409
@@ -109,9 +111,7 @@ def login():
     password = body.get('password')
     profile = User.objects(username=username).first()
     if profile and bcrypt.check_password_hash(profile.password, password):
-        token = get_token()
-        Session(username=username, session_id=token).save()
-        return {'token': token}, 200
+        return {'token': get_token(username)}, 200
     return {'message': 'Invalid username or password'}, 401
 
 @app.route('/sessions', methods=['DELETE'])
@@ -205,6 +205,7 @@ def get_live_game(current_user, session):
 @cross_origin()
 @token_required
 def get_user_profile(current_user, session):
+    print(current_user)
     return {k: current_user[k] for k in current_user if k not in ['password']}, 200
 
 
