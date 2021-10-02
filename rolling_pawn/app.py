@@ -32,8 +32,7 @@ app.config['MONGODB_SETTINGS'] = {
 
 UI_ENDPOINT = os.environ.get('UI_ENDPOINT') or 'http://localhost:3000'
 
-socketio = SocketIO(app, cors_allowed_origins=[
-    '*'], logger=True, engineio_logger=True)
+socketio = SocketIO(app, cors_allowed_origins=['*', 'http://localhost:3000'], logger=True, engineio_logger=True)
 
 initialize_db(app)
 
@@ -298,13 +297,16 @@ def play_with_user(board, game, user_move, current_user):
 
     board.push_uci(user_move)
     game.update(pgn=generate_pgn(board))
+
     socketio_manager.emit_to_user(player_not_with_turn, 'move', user_move)
+    socketio_manager.emit_to_watchers(str(game.id), 'move', user_move)
 
     game_status = process_game_end(board, game)
     if game_status['game_ended']:
         # Emit these events with some delay
         socketio_manager.emit_to_user(game.opponent, 'game_ended', game_status)
         socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+        socketio_manager.emit_to_watchers(game.id, 'game_ended', game_status)
 
     return {'move': user_move, **game_status}, 200
 
@@ -333,6 +335,8 @@ def play_with_engine(board, game, user_move):
     if game_status['game_ended']:
         return {'move': user_move, 'engine_move': None, **game_status}
 
+    socketio_manager.emit_to_watchers(str(game.id), 'move', user_move)
+
     engine_level = int(game.opponent.split('_')[-1])
     result = engine.play(board, chess.engine.Limit(depth=engine_level))
     engine_move = str(result.move)
@@ -341,12 +345,14 @@ def play_with_engine(board, game, user_move):
 
     # We need emit this with some delay
     socketio_manager.emit_to_user(game.host_id, 'move', engine_move)
+    socketio_manager.emit_to_watchers(str(game.id), 'move', engine_move)
 
     game_status = process_game_end(board, game)
 
     if game_status['game_ended']:
         # We need emit this with some delay
         socketio_manager.emit_to_user(game.host_id, 'game_ended', game_status)
+        socketio_manager.emit_to_watchers(game.id, 'game_ended', game_status)
 
     return {'move': user_move, 'engine_move': engine_move, **game_status}, 200
 
@@ -463,6 +469,12 @@ def on_disconnect():
 def on_new_user(user_id):
     print("User registered ---->" + user_id)
     socketio_manager.add_session(request.sid, user_id)
+
+
+@socketio.on('new_watcher')
+def on_new_watcher(game_id):
+    print("Watcher registered for game ---->" + game_id)
+    socketio_manager.add_watcher_session(request.sid, game_id)
 
 
 socketio.run(app, host='0.0.0.0', port=port, log_output=True)
