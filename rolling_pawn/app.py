@@ -413,23 +413,34 @@ def play_move(current_user, session):
         return {'error': str(e)}, 500
 
 
-@app.route('/games/<game_id>', methods=['GET'])
-@cross_origin()
-@token_required
-def get_game(current_user, session, game_id):
-    query = {'_id': ObjectId(game_id),
-             '$or': [{'opponent': current_user.username},
-                     {'host_id': current_user.username}]}
-
+def get_game(query, username):
     game = Game.objects(__raw__=query).first()
 
     if game is None:
         return {'error': 'Game not found'}, 404
 
-    game_json = to_json(game, current_user.username)
+    game_json = to_json(game, username)
     return {k: game_json[k] for k in [
         'game_id', 'opponent', 'opponent_type',
         'pgn', 'side', 'result', 'created_at']}, 200
+
+
+@app.route('/games/<game_id>', methods=['GET'])
+@cross_origin()
+@token_required
+def get_game_for_user(current_user, session, game_id):
+    query = {'_id': ObjectId(game_id),
+             '$or': [{'opponent': current_user.username},
+                     {'host_id': current_user.username}]}
+    return get_game(query, current_user.username)
+
+
+@app.route('/watcher/games/<game_id>', methods=['GET'])
+@cross_origin()
+def get_game_for_watcher(game_id):
+    query = {'_id': ObjectId(game_id),
+            'status': 'IN_PROGRESS'}
+    return get_game(query, "watcher")
 
 
 @app.route('/score', methods=['GET'])
